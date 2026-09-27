@@ -1,0 +1,41 @@
+[
+  {
+    "id": "vc-shirt-royal-oxford",
+    "name": "Men's Royal Oxford Cotton Shirt",
+    "shopId": "vinayak-collection",
+    "categoryName": "Shirts",
+    "price": 999,
+    "salePrice": 499,
+    "retail_price": 499,
+    "wholesale_price": 3892,
+    "set_size": 12,
+    "wholesale_minimum_sets": 1,
+    "wholesale_enabled": true,
+    "stock": 48,
+    "status": "active",
+    "isNew": true,
+    "colors": [
+      "White",
+      "Navy Blue",
+      "Maroon"
+    ],
+    "clothingDetails": {
+      "sizes": [
+        "M",
+        "L",
+        "XL",
+        "XXL"
+      ],
+      "colors": [
+        "White",
+        "Navy Blue",
+        "Maroon"
+      ]
+    },
+    "images": [
+      "https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?q=80&w=800&auto=format&fit=crop"
+    ],
+    "createdAt": "2026-09-25T08:34:06.756Z",
+    "updatedAt": "2026-09-25T08:34:06.757Z"
+  }
+]

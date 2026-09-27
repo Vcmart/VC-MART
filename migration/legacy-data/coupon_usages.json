@@ -1,0 +1,13 @@
+[
+  {
+    "id": "usage-1790307582659-43yz9",
+    "coupon_id": "c-insta100",
+    "coupon_code": "INSTA100",
+    "order_id": "VRG-TEST-001",
+    "customer_id": null,
+    "customer_email": "test@example.com",
+    "customer_mobile": null,
+    "discount_amount": 100,
+    "used_at": "2026-09-25T03:39:42.659Z"
+  }
+]

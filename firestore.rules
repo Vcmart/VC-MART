@@ -1,0 +1,38 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function admin() { return signedIn() && exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid)) && get(/databases/$(database)/documents/adminUsers/$(request.auth.uid)).data.active == true; }
+    match /products/{id} {
+      allow read: if resource.data.status == 'active' || admin();
+      allow write: if admin();
+    }
+    match /users/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || admin());
+      allow create: if signedIn() && request.auth.uid == uid && request.resource.data.role == 'customer' && request.resource.data.id == uid;
+      allow update: if signedIn() && request.auth.uid == uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['fullName','mobile','address','city','state','pincode','shoppingMode','updatedAt']);
+      allow delete: if admin();
+    }
+    match /orders/{id} {
+      allow read: if admin() || (signedIn() && resource.data.customerId == request.auth.uid);
+      allow create, delete: if false;
+      allow update: if false;
+    }
+    match /coupons/{id} {
+      allow read: if resource.data.active == true || admin();
+      allow write: if admin();
+    }
+    match /couponUsages/{id} { allow read, write: if admin(); }
+    match /shops/{id} { allow read: if resource.data.status == 'active' || admin(); allow write: if admin(); }
+    match /branding/{id} { allow read: if true; allow write: if admin(); }
+    match /settings/{id} { allow read: if true; allow write: if admin(); }
+    // A signed-in user may inspect only their own authorization marker. This lets
+    // the client establish its admin session without exposing the admin roster.
+    // Creation and role changes remain an Admin SDK-only operation.
+    match /adminUsers/{uid} {
+      allow get: if signedIn() && request.auth.uid == uid;
+      allow list: if admin();
+      allow write: if false;
+    }
+  }
+}
