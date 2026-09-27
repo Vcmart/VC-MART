@@ -1,9 +1,24 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { ArrowRight, Sparkles, Shirt, Wrench, Smartphone } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
+import { initialShops } from '../config/siteConfig';
+import { isFirebaseConfigured } from '../lib/firebase';
+import { watchHomepageShopImages, type HomepageShopImages } from '../lib/firebaseRepository';
 
 export const ShopCategoryCards: React.FC = () => {
   const { setCurrentView, setActiveShopId, shops } = useStore();
+  const [homepageImages, setHomepageImages] = useState<HomepageShopImages>({});
+
+  useEffect(() => {
+    if (!isFirebaseConfigured) return;
+    return watchHomepageShopImages(setHomepageImages, (error) => console.error('Homepage images listener failed:', error));
+  }, []);
+
+  const bannerFor = (shopId: string) => homepageImages[shopId] || initialShops.find((shop) => shop.id === shopId)?.bannerImage || '';
+  const restoreDefault = (shopId: string, image: HTMLImageElement) => {
+    const fallback = initialShops.find((shop) => shop.id === shopId)?.bannerImage;
+    if (fallback && image.src !== fallback) image.src = fallback;
+  };
 
   const handleShopSelect = (shopId: string) => {
     setActiveShopId(shopId);
@@ -38,7 +53,8 @@ export const ShopCategoryCards: React.FC = () => {
             {/* Image Banner */}
             <div className="relative aspect-[16/10] overflow-hidden bg-amber-100">
               <img
-                src="https://images.unsplash.com/photo-1490481651871-ab68de25d43d?q=80&w=800&auto=format&fit=crop"
+                src={bannerFor('vinayak-collection')}
+                onError={(event) => restoreDefault('vinayak-collection', event.currentTarget)}
                 alt="Vinayak Collection Fashion"
                 className="w-full h-full object-cover group-hover:scale-108 transition-transform duration-600"
               />
@@ -89,7 +105,8 @@ export const ShopCategoryCards: React.FC = () => {
             {/* Image Banner */}
             <div className="relative aspect-[16/10] overflow-hidden bg-slate-200">
               <img
-                src="https://images.unsplash.com/photo-1558981403-c5f9899a28bc?q=80&w=800&auto=format&fit=crop"
+                src={bannerFor('kinshuk-spare-parts')}
+                onError={(event) => restoreDefault('kinshuk-spare-parts', event.currentTarget)}
                 alt="Kinshuk Bike Spare Parts"
                 className="w-full h-full object-cover group-hover:scale-108 transition-transform duration-600"
               />
@@ -140,7 +157,8 @@ export const ShopCategoryCards: React.FC = () => {
             {/* Image Banner */}
             <div className="relative aspect-[16/10] overflow-hidden bg-sky-100">
               <img
-                src="https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?q=80&w=800&auto=format&fit=crop"
+                src={bannerFor('khushi-communication')}
+                onError={(event) => restoreDefault('khushi-communication', event.currentTarget)}
                 alt="Khushi Communication Mobiles"
                 className="w-full h-full object-cover group-hover:scale-108 transition-transform duration-600"
               />

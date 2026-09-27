@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   ShieldCheck,
   Truck,
@@ -25,6 +25,8 @@ import { initiateRazorpayPayment, RAZORPAY_CONFIG } from '../lib/razorpay';
 import { requestCheckout, getOrderById, applyCouponSecure } from '../lib/firebaseRepository';
 import { Logo } from '../components/Logo';
 import { safeStringArray } from '../utils/clothingSizes';
+
+type CheckoutResult = { orderId: string; total: number; paymentMethod: string; paymentStatus: string; razorpayOrderId?: string; keyId?: string };
 
 export const CheckoutView: React.FC = () => {
   const {
@@ -85,6 +87,8 @@ export const CheckoutView: React.FC = () => {
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
+  const checkoutInFlight = useRef(false);
+  const pendingRazorpayOrder = useRef<{ fingerprint: string; createdAt: number; result: CheckoutResult } | null>(null);
 
   // If cart is empty and no order placed
   if (cart.length === 0 && !placedOrder) {
@@ -130,6 +134,7 @@ export const CheckoutView: React.FC = () => {
 
   const handlePlaceOrder = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (checkoutInFlight.current) return;
 
     // Enforce login before placing order
     if (!currentUser) {
@@ -159,30 +164,49 @@ export const CheckoutView: React.FC = () => {
       phone: contactMobile,
     };
 
+    checkoutInFlight.current = true;
     setIsProcessingPayment(true);
     setPaymentError(null);
 
+    const items = cart.map((item) => ({
+      productId: item.productId || item.product.id,
+      quantity: item.quantity,
+      shoppingMode: item.shoppingMode || shoppingMode,
+      selectedSize: item.selectedSize || '',
+      selectedColor: item.selectedColor || '',
+      selectedVariants: item.selectedVariants || {},
+    }));
+    const fingerprint = JSON.stringify({ uid: currentUser.id, customer: customerPayload, items, shoppingMode, couponId: appliedCoupon?.id || '', couponCode: appliedCoupon?.code || '' });
+    const finishProcessing = () => { checkoutInFlight.current = false; setIsProcessingPayment(false); };
+
     try {
-      const callable = await requestCheckout({
-        customer: customerPayload,
-        paymentMethod,
-        shoppingMode,
-        couponId: appliedCoupon?.id || '',
-        couponCode: appliedCoupon?.code || '',
-        items: cart.map((item) => ({
-          productId: item.productId || item.product.id,
-          quantity: item.quantity,
-          shoppingMode: item.shoppingMode || shoppingMode,
-          selectedSize: item.selectedSize || '',
-          selectedColor: item.selectedColor || '',
-          selectedVariants: item.selectedVariants || {},
-        })),
-      });
-      const result = callable.data as { orderId: string; total: number; paymentMethod: string; paymentStatus: string; razorpayOrderId?: string; keyId?: string };
+      const cached = pendingRazorpayOrder.current;
+      let result: CheckoutResult | null = null;
+      if (paymentMethod === 'razorpay' && cached?.fingerprint === fingerprint && Date.now() - cached.createdAt < 15 * 60 * 1000) {
+        const existing = await getOrderById(cached.result.orderId);
+        if (existing?.paymentStatus === 'paid') {
+          pendingRazorpayOrder.current = null;
+          clearCart(); setPlacedOrder(existing); finishProcessing(); window.scrollTo({ top: 0, behavior: 'smooth' }); return;
+        }
+        if (existing?.paymentStatus === 'pending') result = cached.result;
+        else pendingRazorpayOrder.current = null;
+      }
+      if (!result) {
+        const callable = await requestCheckout({
+          customer: customerPayload,
+          paymentMethod,
+          shoppingMode,
+          couponId: appliedCoupon?.id || '',
+          couponCode: appliedCoupon?.code || '',
+          items,
+        });
+        result = callable.data as CheckoutResult;
+        if (paymentMethod === 'razorpay') pendingRazorpayOrder.current = { fingerprint, createdAt: Date.now(), result };
+      }
       if (paymentMethod === 'cod') {
         const order = await getOrderById(result.orderId);
         if (!order) throw new Error('Order was created but could not be loaded. Please contact support with ID ' + result.orderId);
-        clearCart(); setPlacedOrder(order); setIsProcessingPayment(false); window.scrollTo({ top: 0, behavior: 'smooth' }); return;
+        clearCart(); setPlacedOrder(order); finishProcessing(); window.scrollTo({ top: 0, behavior: 'smooth' }); return;
       }
       if (!result.razorpayOrderId || !result.keyId) throw new Error('Payment order could not be initialized.');
       await initiateRazorpayPayment({
@@ -195,15 +219,16 @@ export const CheckoutView: React.FC = () => {
           try {
             const order = await getOrderById(result.orderId);
             if (!order || String(order.paymentStatus).toLowerCase() !== 'paid') throw new Error('Verified payment order is not available yet. Contact support.');
+            pendingRazorpayOrder.current = null;
             clearCart(); setPlacedOrder(order); window.scrollTo({ top: 0, behavior: 'smooth' });
           } catch (error) { setPaymentError(error instanceof Error ? error.message : 'Could not load order after payment.'); }
-          finally { setIsProcessingPayment(false); }
+          finally { finishProcessing(); }
         },
-        onDismiss: () => { setIsProcessingPayment(false); setPaymentError('Payment window was closed. Your order remains unpaid; you can try again.'); },
-        onError: (error) => { setIsProcessingPayment(false); setPaymentError(error?.message || 'Payment could not be verified. The order has not been marked paid.'); },
+        onDismiss: () => { finishProcessing(); setPaymentError('Payment window was closed. Your order remains unpaid; you can try again.'); },
+        onError: (error) => { finishProcessing(); setPaymentError(error?.message || 'Payment could not be verified. The order has not been marked paid.'); },
       });
     } catch (error) {
-      setIsProcessingPayment(false);
+      finishProcessing();
       setPaymentError(error instanceof Error ? error.message : 'Checkout failed. Please retry.');
     }
   };

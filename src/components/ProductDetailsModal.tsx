@@ -21,6 +21,8 @@ import { useStore } from '../context/StoreContext';
 import { ProductCard } from './ProductCard';
 import { Logo } from './Logo';
 import { SizeChartModal } from './SizeChartModal';
+import { ProductImageLightbox } from './ProductImageLightbox';
+import { getDiscountPercentage } from '../utils/productPresentation';
 import {
   isClothingCategory,
   getProductColors,
@@ -58,6 +60,7 @@ export const ProductDetailsModal: React.FC = () => {
   const maxSetsAvailable = selectedProduct ? Math.floor(Number(selectedProduct.stock ?? 0) / (setSize || 1)) : 0;
 
   const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const [selectedSize, setSelectedSize] = useState<string>('');
   const [selectedColor, setSelectedColor] = useState<string>('');
   const [sizeValidationError, setSizeValidationError] = useState<string | null>(null);
@@ -68,6 +71,7 @@ export const ProductDetailsModal: React.FC = () => {
 
   useEffect(() => {
     setActiveImageIndex(0);
+    setIsLightboxOpen(false);
     setSelectedSize('');
     setSelectedColor('');
     setSizeValidationError(null);
@@ -104,6 +108,7 @@ export const ProductDetailsModal: React.FC = () => {
 
   const colorImages = availableColors.map((c) => c.imageUrl).filter(Boolean) as string[];
   const productImages = Array.from(new Set([...baseImages, ...colorImages]));
+  const discountPercentage = getDiscountPercentage(selectedProduct.price, selectedProduct.salePrice);
 
   const isOutOfStock = isWholesale ? selectedProduct.stock < setSize : selectedProduct.stock <= 0;
   const isFavorite = isInWishlist(selectedProduct.id);
@@ -300,12 +305,14 @@ export const ProductDetailsModal: React.FC = () => {
 
               {/* Main Preview Image */}
               <div className="group relative flex-1 aspect-square rounded-2xl overflow-hidden bg-[#FAF7F2] border border-stone-200 shadow-xs">
-                <img
-                  src={productImages[activeImageIndex] || productImages[0]}
-                  alt={`${selectedProduct.name} - ${activeImageIndex + 1}`}
-                  className="w-full h-full object-cover transition-opacity duration-300"
-                  loading="eager"
-                />
+                <button type="button" aria-label={`View ${selectedProduct.name} image full screen`} onClick={() => setIsLightboxOpen(true)} className="absolute inset-0 w-full h-full cursor-zoom-in">
+                  <img
+                    src={productImages[activeImageIndex] || productImages[0]}
+                    alt={`${selectedProduct.name} - ${activeImageIndex + 1}`}
+                    className="w-full h-full object-cover transition-opacity duration-300"
+                    loading="eager"
+                  />
+                </button>
 
                 {/* Left/Right Navigation Arrows for Multiple Images */}
                 {productImages.length > 1 && (
@@ -441,14 +448,14 @@ export const ProductDetailsModal: React.FC = () => {
                       <span className="text-2xl sm:text-3xl font-extrabold text-[#7A3F0E]">
                         ₹{selectedProduct.salePrice.toLocaleString('en-IN')}
                       </span>
-                      {selectedProduct.price > selectedProduct.salePrice && (
+                      {discountPercentage !== null && (
                         <span className="text-sm text-stone-400 line-through">
                           ₹{selectedProduct.price.toLocaleString('en-IN')}
                         </span>
                       )}
-                      {selectedProduct.discount > 0 && (
+                      {discountPercentage !== null && (
                         <span className="text-xs font-bold px-2 py-0.5 bg-[#B91C1C] text-white rounded-full">
-                          {selectedProduct.discount}% OFF
+                          {discountPercentage}% OFF
                         </span>
                       )}
                     </div>
@@ -1106,6 +1113,14 @@ export const ProductDetailsModal: React.FC = () => {
         sizeChart={selectedProduct.size_chart || selectedProduct.sizeChart}
         availableSizes={availableSizesList}
       />
+      {isLightboxOpen && (
+        <ProductImageLightbox
+          images={productImages}
+          initialIndex={activeImageIndex}
+          productName={selectedProduct.name}
+          onClose={() => setIsLightboxOpen(false)}
+        />
+      )}
     </div>
   );
 };

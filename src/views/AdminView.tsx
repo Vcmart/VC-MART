@@ -45,6 +45,7 @@ import {
 } from '../utils/clothingSizes';
 import { uploadProductImage, saveProduct, findProductBySku, saveStoreSettings, FIREBASE_CONFIG, PRODUCT_STORAGE_PATH, STORAGE_FIREBASE_SETUP, VARIANTS_FIREBASE_SETUP } from '../lib/firebaseRepository';
 import { initialShops } from '../config/siteConfig';
+import { HomepageShopImagesManager } from '../components/HomepageShopImagesManager';
 
 const createProductDraftId = () => `prod-${crypto.randomUUID()}`;
 
@@ -1659,6 +1660,7 @@ export const AdminView: React.FC = () => {
               );
             })}
             </div>
+            <HomepageShopImagesManager />
           </div>
         )}
 

@@ -175,6 +175,18 @@ export const watchStoreSettings = (next: (settings: StoreSettings) => void, erro
 export async function saveStoreSettings(settings: StoreSettings) {
   await setDoc(doc(requireFirebase().db, 'settings', 'store'), { ...settings, updatedAt: new Date().toISOString() }, { merge: true });
 }
+export type HomepageShopImages = Record<string, string>;
+export const watchHomepageShopImages = (next: (images: HomepageShopImages) => void, error: (reason: Error) => void): Unsubscribe =>
+  onSnapshot(doc(requireFirebase().db, 'settings', 'homepage'), (snap) => {
+    const images = snap.data()?.shopImages;
+    next(images && typeof images === 'object' ? images as HomepageShopImages : {});
+  }, error);
+export async function saveHomepageShopImage(shopId: string, imageUrl: string) {
+  await setDoc(doc(requireFirebase().db, 'settings', 'homepage'), {
+    shopImages: { [shopId]: imageUrl },
+    updatedAt: new Date().toISOString(),
+  }, { merge: true });
+}
 export const watchShops = (next: (shops: Array<Record<string, any>>) => void, error: (reason: Error) => void, includeInactive = false): Unsubscribe => {
   const base = includeInactive ? query(docs('shops'), limit(100)) : query(docs('shops'), where('status', '==', 'active'), limit(100));
   return onSnapshot(base, (snap) => next(snap.docs.map((d) => clean(d.id, d.data()))), error);

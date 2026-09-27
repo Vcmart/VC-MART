@@ -1,8 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Heart, Star, ShoppingBag, MessageCircle, Zap, ShieldCheck } from 'lucide-react';
 import { Product } from '../types';
 import { useStore } from '../context/StoreContext';
 import { isClothingCategory } from '../utils/clothingSizes';
+import { getDiscountPercentage, getProductImageUrls } from '../utils/productPresentation';
+import { ProductImageLightbox } from './ProductImageLightbox';
 
 interface ProductCardProps {
   product: Product;
@@ -10,6 +12,7 @@ interface ProductCardProps {
 }
 
 export const ProductCard: React.FC<ProductCardProps> = ({ product, badgeText }) => {
+  const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const {
     addToCart,
     toggleWishlist,
@@ -22,6 +25,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, badgeText }) 
   } = useStore();
 
   const isWholesale = shoppingMode === 'wholesale';
+  const productImages = getProductImageUrls(product);
+  const discountPercentage = getDiscountPercentage(product.price, product.salePrice);
   const setSize = product.set_size || product.setSize || 12;
   const wholesalePrice = product.wholesale_price ?? product.wholesalePrice ?? product.salePrice;
   const minSets = product.wholesale_minimum_sets || product.wholesaleMinimumSets || 1;
@@ -86,12 +91,14 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, badgeText }) 
     >
       {/* 1. Image Container */}
       <div className="relative aspect-square w-full bg-[#FAF7F2] overflow-hidden">
-        <img
-          src={(Array.isArray(product.images) && product.images[0]) || product.image || product.image_url || 'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?q=80&w=800&auto=format&fit=crop'}
-          alt={product.name}
-          className="w-full h-full object-cover object-center group-hover:scale-106 transition-transform duration-500 ease-out"
-          loading="lazy"
-        />
+        <button type="button" aria-label={`View ${product.name} images full screen`} onClick={(event) => { event.stopPropagation(); setIsLightboxOpen(true); }} className="absolute inset-0 w-full h-full cursor-zoom-in">
+          <img
+            src={productImages[0]}
+            alt={product.name}
+            className="w-full h-full object-cover object-center group-hover:scale-106 transition-transform duration-500 ease-out"
+            loading="lazy"
+          />
+        </button>
 
         {/* Top Badges */}
         <div className="absolute top-2 left-2 flex flex-col gap-1 z-10">
@@ -103,9 +110,9 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, badgeText }) 
           </span>
 
           {/* Discount badge */}
-          {product.discount > 0 && (
+          {!isWholesale && discountPercentage !== null && (
             <span className="text-[10px] font-black tracking-wider px-2 py-0.5 rounded-full bg-[#B91C1C] text-white shadow-xs">
-              {product.discount}% OFF
+              {discountPercentage}% OFF
             </span>
           )}
 
@@ -227,14 +234,16 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, badgeText }) 
               <span className="text-base sm:text-lg font-extrabold text-[#7A3F0E]">
                 ₹{product.salePrice.toLocaleString('en-IN')}
               </span>
-              {product.price > product.salePrice && (
+              {discountPercentage !== null && (
                 <span className="text-xs text-stone-400 line-through">
                   ₹{product.price.toLocaleString('en-IN')}
                 </span>
               )}
-              <span className="text-[10px] font-bold text-emerald-700 ml-auto bg-emerald-50 px-1.5 py-0.5 rounded">
-                Save ₹{(product.price - product.salePrice).toLocaleString('en-IN')}
-              </span>
+              {discountPercentage !== null && (
+                <span className="text-[10px] font-bold text-emerald-700 ml-auto bg-emerald-50 px-1.5 py-0.5 rounded">
+                  {discountPercentage}% OFF
+                </span>
+              )}
             </div>
           )}
 
@@ -274,6 +283,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, badgeText }) 
           </div>
         </div>
       </div>
+      {isLightboxOpen && <ProductImageLightbox images={productImages} initialIndex={0} productName={product.name} onClose={() => setIsLightboxOpen(false)} />}
     </div>
   );
 };

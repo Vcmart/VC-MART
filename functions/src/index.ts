@@ -200,26 +200,36 @@ export const createCheckout = onCall({ region: 'asia-south1', secrets: [razorpay
     : { orderId, paymentMethod: 'razorpay', total, paymentStatus: 'pending', razorpayOrderId: gatewayOrder!.id, keyId: razorpayKeyId.value() };
 });
 
-export const verifyRazorpayPayment = onCall({ region: 'asia-south1', secrets: [razorpaySecret] }, async (request) => {
+export const verifyRazorpayPayment = onCall({ region: 'asia-south1', secrets: [razorpayKeyId, razorpaySecret] }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated','Sign in required.');
   const { orderId, razorpayOrderId, razorpayPaymentId, razorpaySignature } = request.data || {};
   const orderRef = db.doc(`orders/${String(orderId || '')}`);
   const orderSnap = await orderRef.get();
   if (!orderSnap.exists || orderSnap.data()?.customerId !== request.auth.uid) throw new HttpsError('permission-denied','Order not found.');
   const order = orderSnap.data()!;
-  if (order.paymentStatus === 'paid') return { verified: true, orderId };
-  if (order.razorpayOrderId !== razorpayOrderId || typeof razorpayPaymentId !== 'string' || typeof razorpaySignature !== 'string') fail('Payment details do not match this order.');
+  if (order.paymentMethod !== 'razorpay' || order.razorpayOrderId !== razorpayOrderId || typeof razorpayPaymentId !== 'string' || !razorpayPaymentId || typeof razorpaySignature !== 'string' || !/^[a-f0-9]{64}$/i.test(razorpaySignature)) fail('Payment details do not match this order.');
   const expected = createHmac('sha256', razorpaySecret.value()).update(`${razorpayOrderId}|${razorpayPaymentId}`).digest();
   const received = Buffer.from(razorpaySignature, 'hex');
   if (received.length !== expected.length || !timingSafeEqual(received, expected)) fail('Payment verification failed.');
+  if (order.paymentStatus === 'paid') return { verified: true, orderId };
+  const gateway = new Razorpay({ key_id: razorpayKeyId.value(), key_secret: razorpaySecret.value() });
+  let payment: { order_id: string; status: string; amount: number | string; currency: string };
+  try {
+    payment = await gateway.payments.fetch(razorpayPaymentId);
+  } catch {
+    fail('Could not confirm payment with Razorpay. Please retry shortly.');
+  }
+  if (payment.order_id !== razorpayOrderId || payment.status !== 'captured' || Number(payment.amount) !== money(order.total) * 100 || payment.currency !== 'INR') fail('Payment is not captured for this order and amount yet. Please retry shortly.');
   await db.runTransaction(async (tx) => {
     const currentOrder = await tx.get(orderRef);
-    if (currentOrder.data()?.paymentStatus === 'paid') return;
+    const currentData = currentOrder.data();
+    if (currentData?.paymentStatus === 'paid') return;
+    if (currentData?.paymentStatus !== 'pending' || currentData.razorpayOrderId !== razorpayOrderId || money(currentData.total) !== money(order.total)) fail('Order is no longer available for payment confirmation.');
     const couponRef = order.couponId ? db.doc(`coupons/${order.couponId}`) : null;
     const usageRef = order.couponId ? db.doc(`couponUsages/${order.couponId}_${request.auth!.uid}`) : null;
     const couponSnap = couponRef ? await tx.get(couponRef) : null;
     const usageSnap = usageRef ? await tx.get(usageRef) : null;
-    if (order.stockReserved !== true) fail('Stock reservation expired. Contact support before retrying payment.');
+    if (currentData.stockReserved !== true) fail('Stock reservation expired. Contact support before retrying payment.');
     if (couponSnap?.exists && usageSnap) {
       const c = couponSnap.data()!; const maxUses = money(c.usageLimit ?? c.usage_limit); const perCustomer = money(c.perCustomerLimit ?? c.per_customer_limit);
       if (maxUses && money(c.usedCount ?? c.usage_count) >= maxUses) fail('Coupon usage limit has been reached.');
