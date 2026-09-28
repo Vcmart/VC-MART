@@ -221,15 +221,17 @@ export const CheckoutView: React.FC = () => {
             if (!order || String(order.paymentStatus).toLowerCase() !== 'paid') throw new Error('Verified payment order is not available yet. Contact support.');
             pendingRazorpayOrder.current = null;
             clearCart(); setPlacedOrder(order); window.scrollTo({ top: 0, behavior: 'smooth' });
-          } catch (error) { setPaymentError(error instanceof Error ? error.message : 'Could not load order after payment.'); }
+          } catch { setPaymentError('Payment was received, but we could not load your order. Please contact support.'); }
           finally { finishProcessing(); }
         },
         onDismiss: () => { finishProcessing(); setPaymentError('Payment window was closed. Your order remains unpaid; you can try again.'); },
-        onError: (error) => { finishProcessing(); setPaymentError(error?.message || 'Payment could not be verified. The order has not been marked paid.'); },
+        onError: () => { finishProcessing(); setPaymentError('Payment could not be verified. Please try again or contact support.'); },
       });
-    } catch (error) {
+    } catch {
       finishProcessing();
-      setPaymentError(error instanceof Error ? error.message : 'Checkout failed. Please retry.');
+      setPaymentError(paymentMethod === 'cod'
+        ? 'We could not place your Cash on Delivery order. Please try again.'
+        : 'We could not start your payment. Please try again.');
     }
   };
 
@@ -717,7 +719,7 @@ export const CheckoutView: React.FC = () => {
                     type="radio"
                     name="payment-method"
                     checked={paymentMethod === 'razorpay'}
-                    onChange={() => setPaymentMethod('razorpay')}
+                    onChange={() => { setPaymentMethod('razorpay'); setPaymentError(null); }}
                     className="mt-1 accent-[#965215]"
                   />
                   <div className="flex-1">
@@ -757,7 +759,7 @@ export const CheckoutView: React.FC = () => {
                     type="radio"
                     name="payment-method"
                     checked={paymentMethod === 'cod'}
-                    onChange={() => setPaymentMethod('cod')}
+                    onChange={() => { setPaymentMethod('cod'); setPaymentError(null); }}
                     className="mt-1 accent-[#965215]"
                   />
                   <div className="flex-1">
@@ -1017,7 +1019,7 @@ export const CheckoutView: React.FC = () => {
                 <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2">
                   <AlertCircle size={16} className="text-red-500 shrink-0 mt-0.5" />
                   <div className="flex-1">
-                    <p className="font-semibold">Payment Notice</p>
+                    <p className="font-semibold">{paymentMethod === 'cod' ? 'Order Notice' : 'Payment Notice'}</p>
                     <p className="text-[11px] mt-0.5">{paymentError}</p>
                   </div>
                 </div>
