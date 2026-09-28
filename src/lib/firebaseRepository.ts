@@ -150,10 +150,11 @@ export const syncAllCouponsToFirebase = async (coupons: Coupon[]) => { let synce
 export const saveLogoToFirebase = saveBranding;
 export const mapFirebaseRecordToOrder = (record: Record<string, any>) => ({ ...record, id: record.id || record.orderId } as Order);
 
-export async function requestCheckout(payload: unknown) {
+export async function requestCheckout(payload: { paymentMethod: 'cod' | 'razorpay'; [key: string]: unknown }) {
   if (!firebaseApp) throw new Error('Firebase is not configured.');
   const { getFunctions } = await import('firebase/functions');
-  return httpsCallable(getFunctions(firebaseApp, 'asia-south1'), 'createCheckout')(payload);
+  const functionName = payload.paymentMethod === 'cod' ? 'createCodCheckout' : 'createCheckout';
+  return httpsCallable(getFunctions(firebaseApp, 'asia-south1'), functionName)(payload);
 }
 export async function applyCouponSecure(payload: { code: string; items: unknown[]; shoppingMode: string }) {
   if (!firebaseApp) throw new Error('Firebase is not configured.');

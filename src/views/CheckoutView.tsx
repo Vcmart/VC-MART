@@ -88,6 +88,7 @@ export const CheckoutView: React.FC = () => {
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const checkoutInFlight = useRef(false);
+  const checkoutAttempt = useRef<{ fingerprint: string; id: string } | null>(null);
   const pendingRazorpayOrder = useRef<{ fingerprint: string; createdAt: number; result: CheckoutResult } | null>(null);
 
   // If cart is empty and no order placed
@@ -176,7 +177,10 @@ export const CheckoutView: React.FC = () => {
       selectedColor: item.selectedColor || '',
       selectedVariants: item.selectedVariants || {},
     }));
-    const fingerprint = JSON.stringify({ uid: currentUser.id, customer: customerPayload, items, shoppingMode, couponId: appliedCoupon?.id || '', couponCode: appliedCoupon?.code || '' });
+    const fingerprint = JSON.stringify({ uid: currentUser.id, customer: customerPayload, items, paymentMethod, shoppingMode, couponId: appliedCoupon?.id || '', couponCode: appliedCoupon?.code || '' });
+    if (checkoutAttempt.current?.fingerprint !== fingerprint) {
+      checkoutAttempt.current = { fingerprint, id: crypto.randomUUID() };
+    }
     const finishProcessing = () => { checkoutInFlight.current = false; setIsProcessingPayment(false); };
 
     try {
@@ -189,7 +193,10 @@ export const CheckoutView: React.FC = () => {
           clearCart(); setPlacedOrder(existing); finishProcessing(); window.scrollTo({ top: 0, behavior: 'smooth' }); return;
         }
         if (existing?.paymentStatus === 'pending') result = cached.result;
-        else pendingRazorpayOrder.current = null;
+        else {
+          pendingRazorpayOrder.current = null;
+          checkoutAttempt.current = { fingerprint, id: crypto.randomUUID() };
+        }
       }
       if (!result) {
         const callable = await requestCheckout({
@@ -199,9 +206,21 @@ export const CheckoutView: React.FC = () => {
           couponId: appliedCoupon?.id || '',
           couponCode: appliedCoupon?.code || '',
           items,
+          checkoutAttemptId: checkoutAttempt.current.id,
         });
         result = callable.data as CheckoutResult;
         if (paymentMethod === 'razorpay') pendingRazorpayOrder.current = { fingerprint, createdAt: Date.now(), result };
+      }
+      if (paymentMethod === 'razorpay' && result.paymentStatus === 'paid') {
+        const order = await getOrderById(result.orderId);
+        if (!order) throw new Error('Paid order could not be loaded.');
+        pendingRazorpayOrder.current = null;
+        clearCart(); setPlacedOrder(order); finishProcessing(); window.scrollTo({ top: 0, behavior: 'smooth' }); return;
+      }
+      if (paymentMethod === 'razorpay' && result.paymentStatus !== 'pending') {
+        pendingRazorpayOrder.current = null;
+        checkoutAttempt.current = null;
+        throw new Error('Checkout is no longer pending.');
       }
       if (paymentMethod === 'cod') {
         const order = await getOrderById(result.orderId);

@@ -2,10 +2,10 @@ import { initializeApp } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import type { DocumentReference } from 'firebase-admin/firestore';
 import { defineSecret } from 'firebase-functions/params';
-import { HttpsError, onCall } from 'firebase-functions/v2/https';
+import { HttpsError, onCall, type CallableRequest } from 'firebase-functions/v2/https';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import Razorpay from 'razorpay';
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 
 initializeApp();
 const db = getFirestore();
@@ -30,15 +30,16 @@ function couponDiscount(coupon: any, cart: Awaited<ReturnType<typeof priceCart>>
   const expiry = dateMillis(coupon.expiryDate ?? coupon.expires_at);
   if ((start && start > now) || (expiry && expiry < now)) fail('Coupon is not active.');
   if (cart.subtotal < money(coupon.minOrder ?? coupon.minimum_order_value)) fail('Order total does not meet the coupon minimum.');
-  const applicable = coupon.applicableShoppingType || coupon.applicable_shopping_type || 'both';
-  let products = coupon.applicableProducts ?? coupon.applicable_products ?? 'all';
+  const applicable = coupon.applicable_shopping_type || coupon.applicableShoppingType || 'both';
+  let products = coupon.applicable_products ?? coupon.applicableProducts ?? 'all';
   if (typeof products === 'string' && products !== 'all') { try { products = JSON.parse(products); } catch { fail('Coupon product rules are invalid.'); } }
-  const eligible = cart.items.filter((item: any) => (applicable === 'both' || applicable === item.shoppingMode) && (!coupon.shopId || coupon.shopId === 'all' || coupon.shopId === item.shopId) && (products === 'all' || !Array.isArray(products) || products.includes(item.productId)));
+  const shopId = coupon.applicable_shop || coupon.shopId || 'all';
+  const eligible = cart.items.filter((item: any) => (applicable === 'both' || applicable === item.shoppingMode) && (shopId === 'all' || shopId === item.shopId) && (products === 'all' || !Array.isArray(products) || products.includes(item.productId)));
   if (!eligible.length) fail('Coupon does not apply to products in your cart.');
   const eligibleTotal = eligible.reduce((sum: number, item: any) => sum + item.total, 0);
-  const amount = money(coupon.value ?? coupon.discount_value);
-  let discount = coupon.type === 'flat' || coupon.discount_type === 'flat' ? amount : Math.floor(eligibleTotal * amount / 100);
-  const cap = money(coupon.maxDiscount ?? coupon.maximum_discount);
+  const amount = money(coupon.discount_value ?? coupon.value);
+  let discount = (coupon.discount_type || coupon.type) === 'flat' ? amount : Math.floor(eligibleTotal * amount / 100);
+  const cap = money(coupon.maximum_discount ?? coupon.maxDiscount);
   if (cap) discount = Math.min(discount, cap);
   return { discount: Math.min(discount, eligibleTotal), eligible };
 }
@@ -92,7 +93,7 @@ async function priceCart(lines: CheckoutLine[], uid: string) {
   return { items, subtotal, uid };
 }
 
-export const validateCoupon = onCall({ region: 'asia-south1' }, async (request) => {
+export const validateCoupon = onCall({ region: 'asia-south1', invoker: 'public' }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated','Sign in to validate a coupon.');
   const code = String(request.data?.code || '').trim().toUpperCase();
   const lines = request.data?.items as CheckoutLine[];
@@ -109,12 +110,26 @@ export const validateCoupon = onCall({ region: 'asia-south1' }, async (request) 
   return { couponId: snap.docs[0].id, code, discount, eligibleProductIds: eligible.map((item: any) => item.productId) };
 });
 
-export const createCheckout = onCall({ region: 'asia-south1', secrets: [razorpayKeyId, razorpaySecret] }, async (request) => {
+async function createCheckoutOrder(request: CallableRequest, codOnly = false) {
   if (!request.auth) throw new HttpsError('unauthenticated','Sign in before checkout.');
   const uid = request.auth.uid;
   const customer = request.data?.customer || {};
   if (!/^\d{10}$/.test(String(customer.mobile || '')) || !/^\d{6}$/.test(String(customer.pincode || '')) || !/^\S+@\S+\.\S+$/.test(String(customer.email || '')) || !customer.address || !customer.city || !customer.state || !customer.fullName) fail('Complete and verify your address, email, mobile, city, state and PIN code.');
   const method = request.data?.paymentMethod === 'cod' ? 'cod' : 'razorpay';
+  if (codOnly && method !== 'cod') fail('Choose Cash on Delivery for this checkout.');
+  const attemptId = String(request.data?.checkoutAttemptId || '');
+  if (attemptId && !/^[a-f0-9-]{36}$/i.test(attemptId)) fail('Invalid checkout attempt. Please retry.');
+  const fingerprint = createHash('sha256').update(JSON.stringify({ customer, items: request.data?.items, paymentMethod: method, shoppingMode: request.data?.shoppingMode, couponId: request.data?.couponId, couponCode: request.data?.couponCode })).digest('hex');
+  const orderId = attemptId
+    ? `VCM-${createHash('sha256').update(`${uid}:${attemptId}`).digest('hex').slice(0, 24).toUpperCase()}`
+    : `VCM-${db.collection('orders').doc().id}`;
+  const orderRef = db.doc(`orders/${orderId}`);
+  const existingOrder = attemptId ? await orderRef.get() : null;
+  if (existingOrder?.exists) {
+    const previous = existingOrder.data()!;
+    if (previous.customerId !== uid || previous.requestFingerprint !== fingerprint) fail('This checkout attempt does not match your order.');
+    return { orderId, paymentMethod: previous.paymentMethod, total: previous.total, paymentStatus: previous.paymentStatus, razorpayOrderId: previous.razorpayOrderId, keyId: previous.paymentMethod === 'razorpay' ? razorpayKeyId.value() : undefined };
+  }
   const cart = await priceCart(request.data?.items, uid);
   const settings = (await db.doc('settings/store').get()).data() || {};
   const freeThreshold = money(settings.freeDeliveryThreshold ?? 499);
@@ -140,16 +155,22 @@ export const createCheckout = onCall({ region: 'asia-south1', secrets: [razorpay
   }
   const total = cart.subtotal - discount + deliveryFee;
   if (total < 1) fail('Invalid order total.');
-  const orderId = `VCM-${Date.now().toString(36).toUpperCase()}`;
-  const orderRef = db.doc(`orders/${orderId}`);
   const groups = Object.values(cart.items.reduce((acc: Record<string, any>, item: any) => { const group = acc[item.shopId] || { shopId: item.shopId, shopName: item.shopName, items: [], subtotal: 0 }; group.items.push(item); group.subtotal += item.total; acc[item.shopId] = group; return acc; }, {}));
-  const base = { orderId, id: orderId, orderNumber: orderId, customerId: uid, customerName: String(customer.fullName), customerEmail: String(customer.email).toLowerCase(), customerMobile: String(customer.mobile), shippingAddress: customer, items: cart.items, shopGroups: groups, shopIds: [...new Set(cart.items.map((item: any) => item.shopId))], shoppingMode: request.data?.shoppingMode || 'retail', orderType: request.data?.shoppingMode || 'retail', subtotal: cart.subtotal, discount, couponCode: request.data?.couponCode || '', couponId: couponId || null, deliveryFee, deliveryCharge: deliveryFee, total, totalAmount: total, paymentMethod: method, paymentStatus: method === 'cod' ? 'cod_pending' : 'pending', orderStatus: 'pending', trackingNumber: '', estimatedDelivery: '', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+  const base = { orderId, id: orderId, orderNumber: orderId, customerId: uid, requestFingerprint: fingerprint, customerName: String(customer.fullName), customerEmail: String(customer.email).toLowerCase(), customerMobile: String(customer.mobile), shippingAddress: customer, items: cart.items, shopGroups: groups, shopIds: [...new Set(cart.items.map((item: any) => item.shopId))], shoppingMode: request.data?.shoppingMode || 'retail', orderType: request.data?.shoppingMode || 'retail', subtotal: cart.subtotal, discount, couponCode: request.data?.couponCode || '', couponId: couponId || null, deliveryFee, deliveryCharge: deliveryFee, total, totalAmount: total, paymentMethod: method, paymentStatus: method === 'cod' ? 'cod_pending' : 'pending', orderStatus: 'pending', trackingNumber: '', estimatedDelivery: '', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
   let gatewayOrder: { id: string } | null = null;
   if (method === 'razorpay') {
     const client = new Razorpay({ key_id: razorpayKeyId.value(), key_secret: razorpaySecret.value() });
     gatewayOrder = await client.orders.create({ amount: total * 100, currency: 'INR', receipt: orderId, notes: { orderId, customerId: uid } });
   }
+  let concurrentOrder: FirebaseFirestore.DocumentData | null = null;
   await db.runTransaction(async (tx) => {
+    const orderSnap = await tx.get(orderRef);
+    if (orderSnap.exists) {
+      const previous = orderSnap.data()!;
+      if (previous.customerId !== uid || previous.requestFingerprint !== fingerprint) fail('This checkout attempt does not match your order.');
+      concurrentOrder = previous;
+      return;
+    }
     const byProduct = new Map<string, any[]>();
     for (const line of cart.items as any[]) byProduct.set(line.productId, [...(byProduct.get(line.productId) || []), line]);
     const refs = [...byProduct.keys()].map((id) => db.doc(`products/${id}`));
@@ -195,12 +216,21 @@ export const createCheckout = onCall({ region: 'asia-south1', secrets: [razorpay
       tx.set(usageRef, { count, uid, couponId, lastOrderId: orderId, updatedAt: new Date().toISOString() }, { merge: true });
     }
   });
+  if (concurrentOrder) {
+    const previous = concurrentOrder as FirebaseFirestore.DocumentData;
+    return { orderId, paymentMethod: previous.paymentMethod, total: previous.total, paymentStatus: previous.paymentStatus, razorpayOrderId: previous.razorpayOrderId, keyId: previous.paymentMethod === 'razorpay' ? razorpayKeyId.value() : undefined };
+  }
   return method === 'cod'
     ? { orderId, paymentMethod: 'cod', total, paymentStatus: 'cod_pending' }
     : { orderId, paymentMethod: 'razorpay', total, paymentStatus: 'pending', razorpayOrderId: gatewayOrder!.id, keyId: razorpayKeyId.value() };
-});
+}
 
-export const verifyRazorpayPayment = onCall({ region: 'asia-south1', secrets: [razorpayKeyId, razorpaySecret] }, async (request) => {
+// COD has no Razorpay Secret Manager binding, so it remains available even when
+// online payment credentials are unavailable.
+export const createCodCheckout = onCall({ region: 'asia-south1', invoker: 'public' }, (request) => createCheckoutOrder(request, true));
+export const createCheckout = onCall({ region: 'asia-south1', invoker: 'public', secrets: [razorpayKeyId, razorpaySecret] }, (request) => createCheckoutOrder(request));
+
+export const verifyRazorpayPayment = onCall({ region: 'asia-south1', invoker: 'public', secrets: [razorpayKeyId, razorpaySecret] }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated','Sign in required.');
   const { orderId, razorpayOrderId, razorpayPaymentId, razorpaySignature } = request.data || {};
   const orderRef = db.doc(`orders/${String(orderId || '')}`);
@@ -231,14 +261,12 @@ export const verifyRazorpayPayment = onCall({ region: 'asia-south1', secrets: [r
     const usageSnap = usageRef ? await tx.get(usageRef) : null;
     if (currentData.stockReserved !== true) fail('Stock reservation expired. Contact support before retrying payment.');
     if (couponSnap?.exists && usageSnap) {
-      const c = couponSnap.data()!; const maxUses = money(c.usageLimit ?? c.usage_limit); const perCustomer = money(c.perCustomerLimit ?? c.per_customer_limit);
-      if (maxUses && money(c.usedCount ?? c.usage_count) >= maxUses) fail('Coupon usage limit has been reached.');
-      if (perCustomer && money(usageSnap.data()?.count) >= perCustomer) fail('Coupon use limit reached.');
+      const c = couponSnap.data()!;
       const usedCount = money(c.usedCount ?? c.usage_count) + 1; const count = money(usageSnap.data()?.count) + 1;
       tx.update(couponRef!, { usedCount, usage_count: usedCount });
       tx.set(usageRef!, { count, uid: request.auth!.uid, couponId: order.couponId, lastOrderId: orderId, updatedAt: new Date().toISOString() }, { merge: true });
     }
-    tx.update(orderRef, { paymentStatus: 'paid', orderStatus: 'confirmed', razorpayPaymentId, razorpaySignature, updatedAt: new Date().toISOString(), paidAt: FieldValue.serverTimestamp() });
+    tx.update(orderRef, { paymentStatus: 'paid', orderStatus: 'confirmed', stockReserved: false, razorpayPaymentId, updatedAt: new Date().toISOString(), paidAt: FieldValue.serverTimestamp() });
   });
   return { verified: true, orderId };
 });
@@ -307,7 +335,7 @@ export const reconcileExpiredCheckouts = onSchedule({ schedule: 'every 15 minute
   }
 });
 
-export const updateOrderStatus = onCall({ region: 'asia-south1' }, async (request) => {
+export const updateOrderStatus = onCall({ region: 'asia-south1', invoker: 'public' }, async (request) => {
   if (!(await admin(request.auth?.uid))) throw new HttpsError('permission-denied','Admin access required.');
   const { orderId, orderStatus, trackingNumber } = request.data || {};
   const allowed = ['pending','confirmed','processing','packed','shipped','out_for_delivery','delivered','cancelled','returned'];

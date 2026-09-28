@@ -801,11 +801,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     if (discType === 'percentage') {
       const calculated = (eligibleSubtotal * discVal) / 100;
-      cartDiscount = maxDisc ? Math.min(calculated, maxDisc) : calculated;
+      cartDiscount = Math.min(eligibleSubtotal, maxDisc ? Math.min(calculated, maxDisc) : calculated);
     } else if (discType === 'flat') {
-      cartDiscount = Math.min(cartSubtotal, discVal);
+      cartDiscount = Math.min(eligibleSubtotal, discVal, maxDisc || Infinity);
     }
-    cartDiscount = Math.round(cartDiscount);
+    cartDiscount = Math.floor(cartDiscount);
   }
 
   const deliveryCharge =
