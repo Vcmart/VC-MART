@@ -67,3 +67,25 @@ test('valid COD checkout creates one pending order and a retry is idempotent', a
 test('COD checkout requires Firebase Authentication', async () => {
   await assert.rejects(createCodCheckout({ ...request, auth: undefined }), { code: 'unauthenticated' });
 });
+
+for (const [label, address, attemptId] of [
+  ['Charkhi Dadri, Haryana 127306', { address: 'Street No 12E, Gandhi Nagar', city: ' Charkhi Dadri ', state: ' Haryana ', pincode: '127306' }, '22222222-2222-4222-8222-222222222222'],
+  ['Delhi 110001', { address: ' 12 Connaught Place ', city: 'New Delhi', state: 'Delhi', pincode: '110001' }, '33333333-3333-4333-8333-333333333333'],
+]) {
+  test(`COD accepts ${label}, normalizes contact/address, and decrements stock once`, async () => {
+    const before = records.get('products/sample-product').stock;
+    const input = { ...request, data: { ...request.data, customer: { ...request.data.customer, ...address, mobile: '+91 98765 43210' }, checkoutAttemptId: attemptId } };
+    const first = await createCodCheckout(input);
+    const saved = records.get(`orders/${first.orderId}`);
+    assert.equal(saved.shippingAddress.city, address.city.trim());
+    assert.equal(saved.shippingAddress.state, address.state.trim());
+    assert.equal(saved.shippingAddress.pincode, address.pincode);
+    assert.equal(saved.customerMobile, '9876543210');
+    assert.equal(saved.paymentMethod, 'cod');
+    assert.equal(saved.paymentStatus, 'pending');
+    assert.equal(saved.orderStatus, 'pending');
+    assert.equal(records.get('products/sample-product').stock, before - 1);
+    assert.deepEqual(await createCodCheckout(input), first);
+    assert.equal(records.get('products/sample-product').stock, before - 1);
+  });
+}

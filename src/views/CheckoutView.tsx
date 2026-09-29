@@ -63,7 +63,7 @@ export const CheckoutView: React.FC = () => {
     email: '',
     address: '',
     city: '',
-    state: 'Uttar Pradesh',
+    state: '',
     pincode: '',
   });
 
@@ -78,6 +78,7 @@ export const CheckoutView: React.FC = () => {
         phone: currentUser.mobile || prev.phone || '',
         address: prev.address || currentUser.address || '',
         city: prev.city || currentUser.city || '',
+        state: prev.state || currentUser.state || '',
         pincode: prev.pincode || currentUser.pincode || '',
       }));
     }
@@ -117,9 +118,9 @@ export const CheckoutView: React.FC = () => {
 
   const validateForm = () => {
     const errors: Record<string, string> = {};
-    const ph = (customer.phone || customer.mobile || '').trim();
+    const ph = (customer.phone || customer.mobile || '').replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
     if (!customer.fullName.trim()) errors.fullName = 'Full name is required';
-    if (!ph || !/^[6-9]\d{9}$/.test(ph.replace(/[^0-9]/g, ''))) {
+    if (!/^[6-9]\d{9}$/.test(ph)) {
       errors.phone = 'Valid 10-digit Indian mobile number is required';
     }
     if (!customer.email.trim() || !/^\S+@\S+\.\S+$/.test(customer.email)) {
@@ -127,6 +128,7 @@ export const CheckoutView: React.FC = () => {
     }
     if (!customer.address.trim()) errors.address = 'Delivery address is required';
     if (!customer.city.trim()) errors.city = 'City is required';
+    if (!customer.state.trim()) errors.state = 'State is required';
     if (!customer.pincode.trim() || !/^\d{6}$/.test(customer.pincode.trim())) {
       errors.pincode = 'Valid 6-digit Indian PIN code is required';
     }
@@ -159,11 +161,17 @@ export const CheckoutView: React.FC = () => {
 
     if (!validateForm()) return;
 
-    const contactMobile = (customer.phone || customer.mobile || '').trim();
+    const contactMobile = (customer.phone || customer.mobile || '').replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
     const customerPayload = {
       ...customer,
+      fullName: customer.fullName.trim(),
       mobile: contactMobile,
       phone: contactMobile,
+      email: customer.email.trim(),
+      address: customer.address.trim(),
+      city: customer.city.trim(),
+      state: customer.state.trim(),
+      pincode: customer.pincode.trim(),
     };
 
     checkoutInFlight.current = true;
@@ -670,6 +678,7 @@ export const CheckoutView: React.FC = () => {
                     onChange={(e) => setCustomer({ ...customer, state: e.target.value })}
                     className="w-full p-2.5 bg-white border border-stone-300 rounded-xl focus:border-[#965215]"
                   >
+                    <option value="">Select state</option>
                     {[
                       'Uttar Pradesh',
                       'Delhi',
@@ -690,6 +699,9 @@ export const CheckoutView: React.FC = () => {
                       </option>
                     ))}
                   </select>
+                  {formErrors.state && (
+                    <p className="text-red-600 text-[11px] mt-1">{formErrors.state}</p>
+                  )}
                 </div>
 
                 {/* PIN Code */}

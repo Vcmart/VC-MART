@@ -116,7 +116,19 @@ export const validateCoupon = onCall({ region: 'asia-south1', invoker: 'public' 
 async function createCodCheckoutOrder(request: CallableRequest) {
   if (!request.auth) throw new HttpsError('unauthenticated','Sign in before checkout.');
   const uid = request.auth.uid;
-  const customer = request.data?.customer || {};
+  const submittedCustomer = request.data?.customer || {};
+  const mobile = String(submittedCustomer.mobile || '').replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
+  const customer = {
+    ...submittedCustomer,
+    fullName: String(submittedCustomer.fullName || '').trim(),
+    mobile,
+    phone: mobile,
+    email: String(submittedCustomer.email || '').trim(),
+    address: String(submittedCustomer.address || '').trim(),
+    city: String(submittedCustomer.city || '').trim(),
+    state: String(submittedCustomer.state || '').trim(),
+    pincode: String(submittedCustomer.pincode || '').trim(),
+  };
   if (!/^\d{10}$/.test(String(customer.mobile || '')) || !/^\d{6}$/.test(String(customer.pincode || '')) || !/^\S+@\S+\.\S+$/.test(String(customer.email || '')) || !customer.address || !customer.city || !customer.state || !customer.fullName) fail('Complete and verify your address, email, mobile, city, state and PIN code.');
   if (request.data?.paymentMethod !== 'cod') fail('Choose Cash on Delivery for this checkout.');
   const attemptId = String(request.data?.checkoutAttemptId || '');
