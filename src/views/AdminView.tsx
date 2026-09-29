@@ -1423,29 +1423,10 @@ export const AdminView: React.FC = () => {
                                       </span>
                                     )}
 
-                                    {order.paymentMethod === 'razorpay' ? (
-                                      <span className={`text-[10px] font-bold uppercase px-2.5 py-0.5 rounded-full border ${
-                                        order.paymentStatus === 'Paid'
-                                          ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                                          : 'bg-amber-50 text-amber-800 border-amber-300'
-                                      }`}>
-                                        Razorpay Live ({order.paymentStatus || 'Paid'})
-                                      </span>
-                                    ) : (
-                                      <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-stone-100 text-stone-700">
-                                        {order.paymentMethod === 'cod' ? 'Cash on Delivery' : order.paymentMethod}
-                                      </span>
-                                    )}
-                                    {order.razorpayPaymentId && (
-                                      <span className="font-mono text-[10px] font-bold text-[#7A3F0E] bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full" title="Razorpay Payment ID">
-                                        Pay ID: {order.razorpayPaymentId}
-                                      </span>
-                                    )}
-                                    {order.razorpayOrderId && (
-                                      <span className="font-mono text-[10px] text-stone-600 bg-stone-50 border border-stone-200 px-2 py-0.5 rounded-full" title="Razorpay Order ID">
-                                        Rzp Order: {order.razorpayOrderId}
-                                      </span>
-                                    )}
+                                    <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-stone-100 text-stone-700">
+                                      {order.paymentMethod === 'cod' ? 'Cash on Delivery' : order.paymentMethod === 'razorpay' ? `Razorpay · ${order.paymentStatus}` : 'Previous online payment'}
+                                    </span>
+                                    {order.fulfillmentReview && <span className="text-[10px] font-bold text-red-700 bg-red-50 px-2 py-0.5 rounded-full">Stock review / refund needed</span>}
                                     <span className="text-xs text-stone-400">
                                       {new Date(order.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
                                     </span>
@@ -1461,6 +1442,7 @@ export const AdminView: React.FC = () => {
                                   {/* Status dropdown */}
                                   <select
                                     value={order.orderStatus}
+                                    disabled={order.paymentMethod === 'razorpay' && order.paymentStatus !== 'paid'}
                                     onChange={(e) => {
                                       void updateOrderStatus(order.id, e.target.value as any)
                                         .then(() => setFirebaseFeedback(`Order ${order.orderNumber || order.id} updated in Firebase.`))

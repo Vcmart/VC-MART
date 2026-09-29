@@ -1,8 +1,8 @@
 import { getApp, getApps, initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { connectAuthEmulator, getAuth } from 'firebase/auth';
+import { connectFirestoreEmulator, getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
-import { getFunctions } from 'firebase/functions';
+import { connectFunctionsEmulator, getFunctions } from 'firebase/functions';
 
 const config = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -21,6 +21,16 @@ export const auth = firebaseApp ? getAuth(firebaseApp) : null;
 export const db = firebaseApp ? getFirestore(firebaseApp) : null;
 export const storage = firebaseApp ? getStorage(firebaseApp) : null;
 export const functions = firebaseApp ? getFunctions(firebaseApp, 'asia-south1') : null;
+
+if (import.meta.env.DEV && import.meta.env.VITE_USE_FIREBASE_EMULATORS === 'true' && auth && db && functions) {
+  const emulatorWindow = window as Window & { __vcmartEmulatorsConnected?: boolean };
+  if (!emulatorWindow.__vcmartEmulatorsConnected) {
+    connectAuthEmulator(auth, 'http://127.0.0.1:9099');
+    connectFirestoreEmulator(db, '127.0.0.1', 8080);
+    connectFunctionsEmulator(functions, '127.0.0.1', 5001);
+    emulatorWindow.__vcmartEmulatorsConnected = true;
+  }
+}
 
 export function requireFirebase() {
   if (!auth || !db || !storage) throw new Error('Firebase is not configured. Add the VITE_FIREBASE_* values to .env.local.');

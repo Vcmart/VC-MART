@@ -213,6 +213,7 @@ export const TrackOrderView: React.FC = () => {
                 <span className="text-sm font-extrabold uppercase tracking-wider px-3 py-1 rounded-full bg-amber-100 text-[#7A3F0E] inline-block mt-0.5">
                   {searchedOrder.orderStatus}
                 </span>
+                {searchedOrder.paymentMethod === 'razorpay' && <span className="mt-2 block text-xs font-semibold text-stone-700">Payment: {searchedOrder.paymentStatus === 'paid' ? 'Paid online' : searchedOrder.paymentStatus === 'failed' ? 'Not completed' : 'Pending verification'}</span>}
               </div>
             </div>
 

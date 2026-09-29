@@ -174,6 +174,8 @@ export const CustomerAccountDrawer: React.FC = () => {
                         </span>
                       </div>
 
+                      {ord.paymentMethod === 'razorpay' && <p className="mt-2 text-[11px] font-semibold text-stone-700">Payment: {ord.paymentStatus === 'paid' ? 'Paid online' : ord.paymentStatus === 'failed' ? 'Not completed' : 'Pending verification'}</p>}
+
                       {/* Items Preview */}
                       <div className="py-2.5 space-y-1.5 text-xs">
                         {ord.items?.slice(0, 3).map((it, idx) => (

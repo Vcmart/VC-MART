@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { getCartItemPrice, WHOLESALE_DELIVERY_PER_SET } from '../utils/pricing';
 import {
   ShieldCheck,
   Truck,
-  CreditCard,
   Banknote,
   CheckCircle2,
   ChevronRight,
@@ -12,7 +12,6 @@ import {
   Printer,
   Cloud,
   Lock,
-  Zap,
   Loader2,
   AlertCircle,
   User,
@@ -20,13 +19,15 @@ import {
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { siteConfig } from '../config/siteConfig';
-import { CustomerDetails, Order, PaymentMethod } from '../types';
-import { initiateRazorpayPayment, RAZORPAY_CONFIG } from '../lib/razorpay';
-import { requestCheckout, getOrderById, applyCouponSecure } from '../lib/firebaseRepository';
+import { CustomerDetails, Order } from '../types';
+import { requestCheckout, getOrderById, applyCouponSecure, createRazorpayCheckout, verifyRazorpayPayment, markRazorpayCheckoutFailed } from '../lib/firebaseRepository';
+import { loadRazorpayCheckout, type RazorpaySuccess } from '../lib/razorpayCheckout';
 import { Logo } from '../components/Logo';
 import { safeStringArray } from '../utils/clothingSizes';
 
-type CheckoutResult = { orderId: string; total: number; paymentMethod: string; paymentStatus: string; razorpayOrderId?: string; keyId?: string };
+type CheckoutResult = { orderId: string; total: number; paymentMethod: 'cod'; paymentStatus: string };
+type RazorpayStart = { orderId: string; razorpayOrderId: string; amount: number; currency: 'INR'; keyId: string };
+type RazorpayVerify = { orderId: string; paymentStatus: 'paid' | 'pending'; fulfillmentReview: boolean };
 
 export const CheckoutView: React.FC = () => {
   const {
@@ -82,14 +83,14 @@ export const CheckoutView: React.FC = () => {
     }
   }, [currentUser]);
 
-  const [paymentMethod, setPaymentMethod] = useState<'razorpay' | 'cod'>('razorpay');
   const [placedOrder, setPlacedOrder] = useState<Order | null>(null);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<'cod' | 'razorpay'>('cod');
+  const [pendingPayment, setPendingPayment] = useState<(RazorpaySuccess & { orderId: string }) | null>(null);
   const checkoutInFlight = useRef(false);
   const checkoutAttempt = useRef<{ fingerprint: string; id: string } | null>(null);
-  const pendingRazorpayOrder = useRef<{ fingerprint: string; createdAt: number; result: CheckoutResult } | null>(null);
 
   // If cart is empty and no order placed
   if (cart.length === 0 && !placedOrder) {
@@ -183,74 +184,81 @@ export const CheckoutView: React.FC = () => {
     }
     const finishProcessing = () => { checkoutInFlight.current = false; setIsProcessingPayment(false); };
 
-    try {
-      const cached = pendingRazorpayOrder.current;
-      let result: CheckoutResult | null = null;
-      if (paymentMethod === 'razorpay' && cached?.fingerprint === fingerprint && Date.now() - cached.createdAt < 15 * 60 * 1000) {
-        const existing = await getOrderById(cached.result.orderId);
-        if (existing?.paymentStatus === 'paid') {
-          pendingRazorpayOrder.current = null;
-          clearCart(); setPlacedOrder(existing); finishProcessing(); window.scrollTo({ top: 0, behavior: 'smooth' }); return;
-        }
-        if (existing?.paymentStatus === 'pending') result = cached.result;
-        else {
-          pendingRazorpayOrder.current = null;
-          checkoutAttempt.current = { fingerprint, id: crypto.randomUUID() };
-        }
-      }
-      if (!result) {
-        const callable = await requestCheckout({
-          customer: customerPayload,
-          paymentMethod,
-          shoppingMode,
-          couponId: appliedCoupon?.id || '',
-          couponCode: appliedCoupon?.code || '',
-          items,
-          checkoutAttemptId: checkoutAttempt.current.id,
+    if (paymentMethod === 'razorpay') {
+      let preparedOrderId = '';
+      try {
+        const callable = await createRazorpayCheckout({
+          customer: customerPayload, shoppingMode, couponId: appliedCoupon?.id || '',
+          couponCode: appliedCoupon?.code || '', items, checkoutAttemptId: checkoutAttempt.current.id,
         });
-        result = callable.data as CheckoutResult;
-        if (paymentMethod === 'razorpay') pendingRazorpayOrder.current = { fingerprint, createdAt: Date.now(), result };
-      }
-      if (paymentMethod === 'razorpay' && result.paymentStatus === 'paid') {
-        const order = await getOrderById(result.orderId);
-        if (!order) throw new Error('Paid order could not be loaded.');
-        pendingRazorpayOrder.current = null;
-        clearCart(); setPlacedOrder(order); finishProcessing(); window.scrollTo({ top: 0, behavior: 'smooth' }); return;
-      }
-      if (paymentMethod === 'razorpay' && result.paymentStatus !== 'pending') {
-        pendingRazorpayOrder.current = null;
+        const prepared = callable.data as RazorpayStart;
+        preparedOrderId = prepared.orderId;
+        if (!prepared.keyId || !prepared.razorpayOrderId || prepared.currency !== 'INR' || prepared.amount !== cartTotal * 100) {
+          throw new Error('Payment details changed. Please refresh your cart and try again.');
+        }
+        const Razorpay = await loadRazorpayCheckout();
+        let completed = false;
+        const checkout = new Razorpay({
+          key: prepared.keyId, amount: prepared.amount, currency: 'INR', order_id: prepared.razorpayOrderId,
+          name: 'VC MART', description: 'VC MART order payment',
+          prefill: { name: customerPayload.fullName, email: customerPayload.email, contact: customerPayload.mobile },
+          theme: { color: '#965215' },
+          handler: async (response) => {
+            completed = true;
+            const payload = { ...response, orderId: prepared.orderId };
+            setPendingPayment(payload);
+            try {
+              const verified = (await verifyRazorpayPayment(payload)).data as RazorpayVerify;
+              if (verified.paymentStatus !== 'paid') {
+                setPaymentError('Payment is processing. Use Check Payment Status shortly; your cart is saved.');
+                return;
+              }
+              const order = await getOrderById(prepared.orderId);
+              if (!order) throw new Error('Order is not available yet.');
+              checkoutAttempt.current = null;
+              setPendingPayment(null);
+              clearCart(); setPlacedOrder(order); window.scrollTo({ top: 0, behavior: 'smooth' });
+            } catch {
+              setPaymentError('Payment confirmation is pending. Please check its status before trying to pay again.');
+            } finally { finishProcessing(); }
+          },
+          modal: { ondismiss: () => {
+            if (completed) return;
+            void markRazorpayCheckoutFailed(prepared.orderId).catch(() => undefined);
+            setPaymentError('Payment was cancelled. No online payment was confirmed.');
+            finishProcessing();
+          } },
+        });
+        checkout.on('payment.failed', () => setPaymentError('Payment failed. Please retry in the payment window or close it to return to checkout.'));
+        checkout.open();
+        return;
+      } catch {
         checkoutAttempt.current = null;
-        throw new Error('Checkout is no longer pending.');
+        if (preparedOrderId) void markRazorpayCheckoutFailed(preparedOrderId).catch(() => undefined);
+        finishProcessing();
+        setPaymentError('Online payment could not be started. Please try again or choose Cash on Delivery.');
+        return;
       }
-      if (paymentMethod === 'cod') {
-        const order = await getOrderById(result.orderId);
-        if (!order) throw new Error('Order was created but could not be loaded. Please contact support with ID ' + result.orderId);
-        clearCart(); setPlacedOrder(order); finishProcessing(); window.scrollTo({ top: 0, behavior: 'smooth' }); return;
-      }
-      if (!result.razorpayOrderId || !result.keyId) throw new Error('Payment order could not be initialized.');
-      await initiateRazorpayPayment({
-        orderNumber: result.orderId,
-        firebaseOrderId: result.orderId,
-        backendOrder: { orderId: result.razorpayOrderId, keyId: result.keyId, amount: result.total * 100 },
-        amount: result.total,
-        customer: { fullName: customer.fullName, email: customer.email, mobile: contactMobile, address: customer.address, city: customer.city, pincode: customer.pincode },
-        onSuccess: async () => {
-          try {
-            const order = await getOrderById(result.orderId);
-            if (!order || String(order.paymentStatus).toLowerCase() !== 'paid') throw new Error('Verified payment order is not available yet. Contact support.');
-            pendingRazorpayOrder.current = null;
-            clearCart(); setPlacedOrder(order); window.scrollTo({ top: 0, behavior: 'smooth' });
-          } catch { setPaymentError('Payment was received, but we could not load your order. Please contact support.'); }
-          finally { finishProcessing(); }
-        },
-        onDismiss: () => { finishProcessing(); setPaymentError('Payment window was closed. Your order remains unpaid; you can try again.'); },
-        onError: () => { finishProcessing(); setPaymentError('Payment could not be verified. Please try again or contact support.'); },
+    }
+
+    try {
+      const callable = await requestCheckout({
+        customer: customerPayload,
+        paymentMethod: 'cod',
+        shoppingMode,
+        couponId: appliedCoupon?.id || '',
+        couponCode: appliedCoupon?.code || '',
+        items,
+        checkoutAttemptId: checkoutAttempt.current.id,
       });
+      const result = callable.data as CheckoutResult;
+      const order = await getOrderById(result.orderId);
+      if (!order) throw new Error('Order was created but could not be loaded.');
+      checkoutAttempt.current = null;
+      clearCart(); setPlacedOrder(order); finishProcessing(); window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch {
       finishProcessing();
-      setPaymentError(paymentMethod === 'cod'
-        ? 'We could not place your Cash on Delivery order. Please try again.'
-        : 'We could not start your payment. Please try again.');
+      setPaymentError('We could not place your Cash on Delivery order. Please try again.');
     }
   };
 
@@ -305,12 +313,6 @@ export const CheckoutView: React.FC = () => {
                   <Cloud size={13} className="text-emerald-600" />
                   <span>Saved & Synchronized to Cloud Database (Firebase)</span>
                 </div>
-                {placedOrder.paymentMethod === 'razorpay' && (
-                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 border border-amber-200 text-[#7A3F0E] text-[11px] font-bold">
-                    <CheckCircle2 size={13} className="text-[#965215]" />
-                    <span>Paid via Razorpay Gateway</span>
-                  </div>
-                )}
               </div>
             </div>
 
@@ -324,11 +326,9 @@ export const CheckoutView: React.FC = () => {
                 <div>
                   <span className="text-[10px] uppercase text-stone-400 font-bold block">Payment</span>
                   <span className="font-bold text-stone-900 uppercase">
-                    {placedOrder.paymentMethod === 'razorpay'
-                      ? 'Razorpay (Paid)'
-                      : placedOrder.paymentMethod === 'cod'
+                    {placedOrder.paymentMethod === 'cod'
                       ? 'Cash on Delivery (COD)'
-                      : placedOrder.paymentMethod}
+                      : placedOrder.paymentMethod === 'razorpay' ? 'Online payment · Paid' : 'Previous online payment'}
                   </span>
                 </div>
                 <div>
@@ -340,20 +340,6 @@ export const CheckoutView: React.FC = () => {
                   <span className="font-extrabold text-[#7A3F0E]">₹{ordTotal.toLocaleString('en-IN')}</span>
                 </div>
               </div>
-
-              {/* Razorpay Reference Badge if available */}
-              {placedOrder.razorpayPaymentId && (
-                <div className="p-3 bg-amber-50/60 border border-amber-200/80 rounded-2xl flex items-center justify-between text-xs flex-wrap gap-2">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                    <span className="font-semibold text-stone-800">Razorpay Payment ID:</span>
-                    <span className="font-mono font-bold text-[#7A3F0E]">{placedOrder.razorpayPaymentId}</span>
-                  </div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
-                    Payment Verified
-                  </span>
-                </div>
-              )}
 
               {/* Delivery Address Box */}
               <div className="p-4 bg-stone-50 rounded-2xl text-xs text-stone-700">
@@ -378,9 +364,7 @@ export const CheckoutView: React.FC = () => {
                   const itemImg = item.image || item.product?.images?.[0] || '';
                   const itemName = item.name || item.product?.name || 'Product';
                   const isItemWholesale = item.orderType === 'wholesale' || item.shoppingMode === 'wholesale' || placedOrder.orderType === 'wholesale';
-                  const itemPrice = isItemWholesale
-                    ? (item.wholesalePrice || item.unitPrice || item.price || item.product?.wholesale_price || item.product?.salePrice || 0)
-                    : (item.price || item.product?.salePrice || 0);
+                  const itemPrice = Number(item.unitPrice ?? item.price ?? (isItemWholesale ? item.product?.wholesale_price ?? item.product?.wholesalePrice : item.product?.salePrice) ?? 0);
                   const itemSize = item.selectedSize || item.selectedVariants?.Size;
                   const itemColor = item.selectedColor || item.selectedVariants?.Color;
                   const rawColors = item.wholesaleColors || (item.product?.wholesale_mix_colors || item.product?.wholesaleMixColors);
@@ -726,61 +710,7 @@ export const CheckoutView: React.FC = () => {
               </div>
 
               <div className="space-y-3">
-                {/* 1. Razorpay Gateway */}
-                <label
-                  className={`flex items-start gap-3 p-3.5 rounded-2xl border-2 transition-all cursor-pointer ${
-                    paymentMethod === 'razorpay'
-                      ? 'border-[#965215] bg-amber-50/50 shadow-xs'
-                      : 'border-stone-200 hover:border-stone-300 bg-white'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="payment-method"
-                    checked={paymentMethod === 'razorpay'}
-                    onChange={() => { setPaymentMethod('razorpay'); setPaymentError(null); }}
-                    className="mt-1 accent-[#965215]"
-                  />
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <div className="w-5 h-5 rounded-md bg-[#0C2340] text-white flex items-center justify-center font-bold text-[10px] tracking-tight">
-                        R
-                      </div>
-                      <span className="text-xs font-bold text-stone-900">
-                        Razorpay Secure Gateway
-                      </span>
-                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
-                        Instant Confirmation
-                      </span>
-                      <span className="text-[10px] font-semibold text-[#965215] bg-amber-100/80 px-2 py-0.5 rounded-full">
-                        UPI / Cards / NetBanking
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-stone-600 mt-1">
-                      Pay safely using Google Pay, PhonePe, Paytm, BHIM UPI, Credit/Debit Cards (Visa, MasterCard, RuPay), or NetBanking across 50+ Indian banks.
-                    </p>
-                    <div className="mt-2 flex items-center gap-2 text-[10px] text-stone-400 font-medium">
-                      <Lock size={11} className="text-emerald-600" />
-                      <span>RBI Regulated &bull; 256-bit Bank-grade Encryption</span>
-                    </div>
-                  </div>
-                </label>
-
-                {/* 2. Cash on Delivery (COD) */}
-                <label
-                  className={`flex items-start gap-3 p-3.5 rounded-2xl border-2 transition-all cursor-pointer ${
-                    paymentMethod === 'cod'
-                      ? 'border-[#965215] bg-amber-50/50 shadow-xs'
-                      : 'border-stone-200 hover:border-stone-300 bg-white'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="payment-method"
-                    checked={paymentMethod === 'cod'}
-                    onChange={() => { setPaymentMethod('cod'); setPaymentError(null); }}
-                    className="mt-1 accent-[#965215]"
-                  />
+                <button type="button" aria-pressed={paymentMethod === 'cod'} onClick={() => { setPaymentMethod('cod'); setPaymentError(null); }} className={`flex w-full items-start gap-3 p-3.5 rounded-2xl border-2 text-left shadow-xs ${paymentMethod === 'cod' ? 'border-[#965215] bg-amber-50/50' : 'border-stone-200 bg-white'}`}>
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
                       <Banknote size={16} className="text-[#965215]" />
@@ -792,7 +722,13 @@ export const CheckoutView: React.FC = () => {
                       Pay in cash or digital payment at your doorstep upon order delivery.
                     </p>
                   </div>
-                </label>
+                </button>
+                <button type="button" aria-pressed={paymentMethod === 'razorpay'} onClick={() => { setPaymentMethod('razorpay'); setPaymentError(null); }} className={`flex w-full items-start gap-3 p-3.5 rounded-2xl border-2 text-left shadow-xs ${paymentMethod === 'razorpay' ? 'border-blue-900 bg-blue-50/60' : 'border-stone-200 bg-white'}`}>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2"><ShieldCheck size={16} className="text-blue-900" /><span className="text-xs font-bold text-stone-900">Pay Online Securely</span></div>
+                    <p className="text-[11px] text-stone-500 mt-0.5">UPI, cards and netbanking through Razorpay. Order confirms only after payment verification.</p>
+                  </div>
+                </button>
               </div>
             </div>
           </div>
@@ -817,11 +753,7 @@ export const CheckoutView: React.FC = () => {
                   const rawColors = item.wholesaleColors || (item.product?.wholesale_mix_colors || item.product?.wholesaleMixColors);
                   const wholesaleColors = safeStringArray(rawColors);
                   const setSize = Number(item.product.setSize || item.product.set_size || wholesaleColors.length || 6);
-                  const itemUnitPrice = Number(
-                    isItemWholesale
-                      ? (item.unitPrice ?? item.product.wholesale_price ?? item.product.wholesalePrice ?? item.product.salePrice ?? 0)
-                      : (item.product.salePrice ?? item.unitPrice ?? 0)
-                  ) || 0;
+                  const itemUnitPrice = getCartItemPrice(item, shoppingMode);
                   const totalPieces = Number(item.totalPieces ?? (isItemWholesale ? item.quantity * setSize : item.quantity)) || item.quantity;
 
                   const itemImage =
@@ -1019,11 +951,11 @@ export const CheckoutView: React.FC = () => {
                 )}
 
                 <div className="flex justify-between">
-                  <span>Shipping & Delivery</span>
+                  <span>{hasWholesaleItems ? `Wholesale Delivery (₹${WHOLESALE_DELIVERY_PER_SET} × ${cart.filter((item) => (item.shoppingMode || shoppingMode) === 'wholesale').reduce((sum, item) => sum + item.quantity, 0)} Sets)` : 'Delivery'}</span>
                   {deliveryFee === 0 ? (
                     <span className="font-bold text-emerald-700">FREE</span>
                   ) : (
-                    <span className="font-semibold text-stone-900">₹{deliveryFee}</span>
+                    <span className="font-semibold text-stone-900">₹{deliveryFee.toLocaleString('en-IN')}</span>
                   )}
                 </div>
 
@@ -1038,17 +970,30 @@ export const CheckoutView: React.FC = () => {
                 <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2">
                   <AlertCircle size={16} className="text-red-500 shrink-0 mt-0.5" />
                   <div className="flex-1">
-                    <p className="font-semibold">{paymentMethod === 'cod' ? 'Order Notice' : 'Payment Notice'}</p>
+                    <p className="font-semibold">Order Notice</p>
                     <p className="text-[11px] mt-0.5">{paymentError}</p>
                   </div>
                 </div>
               )}
 
+              {pendingPayment && <button type="button" disabled={isProcessingPayment} onClick={async () => {
+                setIsProcessingPayment(true); setPaymentError(null);
+                try {
+                  const verified = (await verifyRazorpayPayment(pendingPayment)).data as RazorpayVerify;
+                  if (verified.paymentStatus !== 'paid') { setPaymentError('Payment is still processing. Please check again shortly.'); return; }
+                  const order = await getOrderById(pendingPayment.orderId);
+                  if (!order) throw new Error('Order is not available yet.');
+                  checkoutAttempt.current = null; setPendingPayment(null); clearCart(); setPlacedOrder(order);
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                } catch { setPaymentError('Payment confirmation is still pending. Please check again shortly.'); }
+                finally { setIsProcessingPayment(false); }
+              }} className="w-full rounded-xl border border-blue-300 bg-blue-50 px-4 py-3 text-xs font-bold text-blue-900 disabled:opacity-50">Check Payment Status</button>}
+
               {/* Place Order / Pay Button */}
               <button
                 id="place-order-submit-btn"
                 type="submit"
-                disabled={isProcessingPayment || !isWholesaleEligibleForCheckout}
+                disabled={isProcessingPayment || !isWholesaleEligibleForCheckout || Boolean(pendingPayment)}
                 className={`w-full py-4 rounded-xl text-xs sm:text-sm font-bold tracking-wider uppercase shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer disabled:cursor-not-allowed ${
                   !isWholesaleEligibleForCheckout
                     ? 'bg-stone-300 text-stone-500 shadow-none'
@@ -1062,22 +1007,13 @@ export const CheckoutView: React.FC = () => {
                 {isProcessingPayment ? (
                   <>
                     <Loader2 size={16} className="animate-spin" />
-                    <span>VALIDATING & OPENING GATEWAY...</span>
-                  </>
-                ) : paymentMethod === 'razorpay' ? (
-                  <>
-                    <Lock size={15} />
-                    <span>
-                      {hasWholesaleItems && hasRetailItems ? 'PAY MIXED ORDER ' : hasWholesaleItems ? 'PAY WHOLESALE ' : 'PAY '}
-                      ₹{cartTotal.toLocaleString('en-IN')} VIA RAZORPAY
-                    </span>
-                    <ArrowRight size={16} />
+                    <span>{paymentMethod === 'razorpay' ? 'PREPARING SECURE PAYMENT...' : 'CONFIRMING ORDER...'}</span>
                   </>
                 ) : (
                   <>
-                    <Truck size={15} />
+                    {paymentMethod === 'razorpay' ? <ShieldCheck size={15} /> : <Truck size={15} />}
                     <span>
-                      {hasWholesaleItems && hasRetailItems ? 'CONFIRM MIXED COD ' : hasWholesaleItems ? 'CONFIRM WHOLESALE COD ' : 'CONFIRM CASH ON DELIVERY '}
+                      {paymentMethod === 'razorpay' ? 'PAY ONLINE ' : hasWholesaleItems && hasRetailItems ? 'CONFIRM MIXED COD ' : hasWholesaleItems ? 'CONFIRM WHOLESALE COD ' : 'CONFIRM CASH ON DELIVERY '}
                       (₹{cartTotal.toLocaleString('en-IN')})
                     </span>
                     <ArrowRight size={16} />
@@ -1090,11 +1026,6 @@ export const CheckoutView: React.FC = () => {
                   <ShieldCheck size={14} className="text-emerald-600" />
                   256-Bit SSL Encrypted &bull; 100% Genuine Retail Guarantee
                 </p>
-                {paymentMethod === 'razorpay' && (
-                  <p className="text-[10px] text-stone-400">
-                    Supports UPI Apps (GPay, PhonePe, Paytm), RuPay, Visa, Mastercard, and NetBanking
-                  </p>
-                )}
               </div>
             </div>
           </div>

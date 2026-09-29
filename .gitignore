@@ -7,6 +7,7 @@ build/
 .pnpm-store/
 .env
 .env.*
+**/.secret.local
 !.env.example
 .firebaserc
 *service-account*.json

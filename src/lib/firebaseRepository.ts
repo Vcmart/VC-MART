@@ -150,11 +150,27 @@ export const syncAllCouponsToFirebase = async (coupons: Coupon[]) => { let synce
 export const saveLogoToFirebase = saveBranding;
 export const mapFirebaseRecordToOrder = (record: Record<string, any>) => ({ ...record, id: record.id || record.orderId } as Order);
 
-export async function requestCheckout(payload: { paymentMethod: 'cod' | 'razorpay'; [key: string]: unknown }) {
+export async function requestCheckout(payload: { paymentMethod: 'cod'; [key: string]: unknown }) {
   if (!firebaseApp) throw new Error('Firebase is not configured.');
   const { getFunctions } = await import('firebase/functions');
-  const functionName = payload.paymentMethod === 'cod' ? 'createCodCheckout' : 'createCheckout';
-  return httpsCallable(getFunctions(firebaseApp, 'asia-south1'), functionName)(payload);
+  return httpsCallable(getFunctions(firebaseApp, 'asia-south1'), 'createCodCheckout')(payload);
+}
+export async function createRazorpayCheckout(payload: { [key: string]: unknown }) {
+  if (!firebaseApp) throw new Error('Firebase is not configured.');
+  const { getFunctions } = await import('firebase/functions');
+  return httpsCallable(getFunctions(firebaseApp, 'asia-south1'), 'createRazorpayCheckout')(payload);
+}
+export async function verifyRazorpayPayment(payload: {
+  orderId: string; razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string;
+}) {
+  if (!firebaseApp) throw new Error('Firebase is not configured.');
+  const { getFunctions } = await import('firebase/functions');
+  return httpsCallable(getFunctions(firebaseApp, 'asia-south1'), 'verifyRazorpayPayment')(payload);
+}
+export async function markRazorpayCheckoutFailed(orderId: string) {
+  if (!firebaseApp) throw new Error('Firebase is not configured.');
+  const { getFunctions } = await import('firebase/functions');
+  return httpsCallable(getFunctions(firebaseApp, 'asia-south1'), 'markRazorpayCheckoutFailed')({ orderId });
 }
 export async function applyCouponSecure(payload: { code: string; items: unknown[]; shoppingMode: string }) {
   if (!firebaseApp) throw new Error('Firebase is not configured.');

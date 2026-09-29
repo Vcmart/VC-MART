@@ -271,18 +271,22 @@ export interface Order {
   couponCode?: string;
   deliveryCharge: number;
   deliveryFee?: number;
+  shippingCharge?: number;
+  numberOfSets?: number;
+  currency?: 'INR';
   total: number;
   totalAmount?: number;
   paymentMethod: PaymentMethod;
   paymentStatus: PaymentStatus;
+  razorpayOrderId?: string;
+  razorpayPaymentId?: string;
+  paidAt?: string;
+  fulfillmentReview?: boolean;
   orderStatus: OrderStatus;
   trackingNumber: string;
   createdAt: string;
   estimatedDelivery: string;
   notes?: string;
-  razorpayPaymentId?: string;
-  razorpayOrderId?: string;
-  razorpaySignature?: string;
   firebaseSynced?: boolean;
   firebaseSyncedAt?: string;
 }
