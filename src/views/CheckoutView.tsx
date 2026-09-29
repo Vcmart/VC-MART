@@ -241,6 +241,7 @@ export const CheckoutView: React.FC = () => {
       }
     }
 
+    let codStage: 'create-order' | 'load-order' = 'create-order';
     try {
       const callable = await requestCheckout({
         customer: customerPayload,
@@ -252,13 +253,24 @@ export const CheckoutView: React.FC = () => {
         checkoutAttemptId: checkoutAttempt.current.id,
       });
       const result = callable.data as CheckoutResult;
+      codStage = 'load-order';
       const order = await getOrderById(result.orderId);
       if (!order) throw new Error('Order was created but could not be loaded.');
       checkoutAttempt.current = null;
       clearCart(); setPlacedOrder(order); finishProcessing(); window.scrollTo({ top: 0, behavior: 'smooth' });
-    } catch {
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        const failure = error as { code?: string; message?: string } | null;
+        console.error('Cash on Delivery checkout failed', {
+          stage: codStage,
+          code: failure?.code || 'unknown',
+          message: failure?.message || 'Unknown error',
+        });
+      }
       finishProcessing();
-      setPaymentError('We could not place your Cash on Delivery order. Please try again.');
+      setPaymentError(codStage === 'load-order'
+        ? 'Your order may have been placed, but we could not confirm it. Check My Orders before trying again.'
+        : 'We could not place your Cash on Delivery order. Please try again.');
     }
   };
 

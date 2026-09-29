@@ -158,7 +158,7 @@ async function createCodCheckoutOrder(request: CallableRequest) {
   const total = cart.subtotal - discount + deliveryFee;
   if (total < 1) fail('Invalid order total.');
   const groups = Object.values(cart.items.reduce((acc: Record<string, any>, item: any) => { const group = acc[item.shopId] || { shopId: item.shopId, shopName: item.shopName, items: [], subtotal: 0 }; group.items.push(item); group.subtotal += item.total; acc[item.shopId] = group; return acc; }, {}));
-  const base = { orderId, id: orderId, orderNumber: orderId, customerId: uid, requestFingerprint: fingerprint, customerName: String(customer.fullName), customerEmail: String(customer.email).toLowerCase(), customerMobile: String(customer.mobile), shippingAddress: customer, items: cart.items, shopGroups: groups, shopIds: [...new Set(cart.items.map((item: any) => item.shopId))], shoppingMode: request.data?.shoppingMode || 'retail', orderType: request.data?.shoppingMode || 'retail', subtotal: cart.subtotal, discount, couponCode: request.data?.couponCode || '', couponId: couponId || null, deliveryFee, deliveryCharge: deliveryFee, shippingCharge: deliveryFee, numberOfSets, currency: 'INR', total, totalAmount: total, paymentMethod: 'cod', paymentStatus: 'cod_pending', orderStatus: 'pending', trackingNumber: '', estimatedDelivery: '', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+  const base = { orderId, id: orderId, orderNumber: orderId, customerId: uid, requestFingerprint: fingerprint, customerName: String(customer.fullName), customerEmail: String(customer.email).toLowerCase(), customerMobile: String(customer.mobile), shippingAddress: customer, items: cart.items, shopGroups: groups, shopIds: [...new Set(cart.items.map((item: any) => item.shopId))], shoppingMode: request.data?.shoppingMode || 'retail', orderType: request.data?.shoppingMode || 'retail', subtotal: cart.subtotal, discount, couponCode: request.data?.couponCode || '', couponId: couponId || null, deliveryFee, deliveryCharge: deliveryFee, shippingCharge: deliveryFee, numberOfSets, currency: 'INR', total, totalAmount: total, paymentMethod: 'cod', paymentStatus: 'pending', orderStatus: 'pending', trackingNumber: '', estimatedDelivery: '', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
   let concurrentOrder: FirebaseFirestore.DocumentData | null = null;
   await db.runTransaction(async (tx) => {
     const orderSnap = await tx.get(orderRef);
@@ -215,7 +215,7 @@ async function createCodCheckoutOrder(request: CallableRequest) {
     const previous = concurrentOrder as FirebaseFirestore.DocumentData;
     return { orderId, paymentMethod: 'cod', total: previous.total, paymentStatus: previous.paymentStatus };
   }
-  return { orderId, paymentMethod: 'cod', total, paymentStatus: 'cod_pending' };
+  return { orderId, paymentMethod: 'cod', total, paymentStatus: 'pending' };
 }
 
 export const createCodCheckout = onCall({ region: 'asia-south1', invoker: 'public' }, createCodCheckoutOrder);
