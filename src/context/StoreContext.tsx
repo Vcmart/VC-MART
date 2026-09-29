@@ -35,6 +35,7 @@ import {
   syncAllProductsToFirebase,
 } from '../lib/firebaseRepository';
 import { isFirebaseConfigured } from '../lib/firebase';
+import { calculateCartTotals, getCartItemPrice, getProductPrice, getDiscountPercentage } from '../utils/pricing';
 import { watchStoreSettings } from '../lib/firebaseRepository';
 import { watchProducts, watchCoupons, watchShops, watchAdminOrders, watchCustomerOrders, listAdminProducts, saveProduct, softDeleteProduct, saveShop as saveShopFirebase, updateOrder, onAuthStateChanged, auth, registerCustomer as registerCustomerFirebase, loginCustomer as loginCustomerFirebase, logoutCustomer as logoutCustomerFirebase, loadUserProfile, saveUserProfile, verifyAdmin } from '../lib/firebaseRepository';
 import {
@@ -166,9 +167,6 @@ interface StoreContextType {
     notes?: string,
     paymentDetails?: {
       paymentStatus?: PaymentStatus;
-      razorpayPaymentId?: string;
-      razorpayOrderId?: string;
-      razorpaySignature?: string;
     }
   ) => Order | null;
   updateOrderStatus: (orderId: string, status: OrderStatus, trackingNumber?: string) => Promise<void>;
@@ -243,9 +241,24 @@ interface StoreContextType {
 const defaultFilterState: FilterState = {
   shopId: 'all',
   minPrice: 0,
-  maxPrice: 5000,
+  maxPrice: Number.MAX_SAFE_INTEGER,
   inStockOnly: false,
   sortBy: 'popular',
+};
+
+const offerFiltersFromUrl = () => {
+  const params = new URLSearchParams(window.location.search);
+  const shop = params.get('shop');
+  const collection = params.get('collection');
+  const discount = Number(params.get('discount') || 0);
+  return {
+    ...defaultFilterState,
+    maxPrice: Number.MAX_SAFE_INTEGER,
+    shopId: (['vinayak-collection', 'kinshuk-spare-parts', 'khushi-communication'].includes(shop || '') ? shop : 'all') as ShopId | 'all',
+    categoryId: params.get('category') || undefined,
+    collection: (['new-arrivals', 'featured', 'best-sellers'].includes(collection || '') ? collection : undefined) as FilterState['collection'],
+    discountMin: Number.isFinite(discount) && discount > 0 ? discount : undefined,
+  };
 };
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
@@ -318,7 +331,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
   useEffect(() => {
-    const handlePopState = () => setCurrentViewState(viewFromPathname(window.location.pathname));
+    const handlePopState = () => {
+      setCurrentViewState(viewFromPathname(window.location.pathname));
+      setFilters(offerFiltersFromUrl());
+      setSearchQuery(new URLSearchParams(window.location.search).get('search') || '');
+    };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
@@ -328,8 +345,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [activeTrackedOrder, setActiveTrackedOrder] = useState<Order | null>(null);
 
   // 8. Filters & Search State
-  const [filters, setFilters] = useState<FilterState>(defaultFilterState);
-  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [filters, setFilters] = useState<FilterState>(() => typeof window === 'undefined' ? defaultFilterState : offerFiltersFromUrl());
+  const [searchQuery, setSearchQuery] = useState<string>(() => typeof window === 'undefined' ? '' : new URLSearchParams(window.location.search).get('search') || '');
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get('product');
+    if (id) setSelectedProduct(products.find((product) => product.id === id) || null);
+  }, [products]);
 
   // 9. User Authentication & Admin Session State
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
@@ -708,7 +729,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [isAdminLoggedIn]);
 
   // Active Shop Helper
-  const activeShop = filters.shopId !== 'all' ? shops.find((s) => s.id === filters.shopId) || null : null;
+  const activeShop = filters.shopId !== 'all' ? shops.find((s) => s.id === filters.shopId) || initialShops.find((s) => s.id === filters.shopId) || null : null;
 
   const setActiveShopId = (shopId: ShopId | 'all') => {
     setFilters((prev) => ({
@@ -722,26 +743,27 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const resetFilters = () => {
     setFilters(defaultFilterState);
     setSearchQuery('');
+    if (window.location.pathname === '/shop') window.history.replaceState({ view: 'shop' }, '', '/shop');
   };
 
   const openProductDetails = (product: Product) => {
     setSelectedProduct(product);
   };
+  const closeProductDetails = () => {
+    setSelectedProduct(null);
+    if (window.location.pathname === '/shop') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.has('product')) {
+        params.delete('product');
+        window.history.replaceState({ view: 'shop' }, '', `/shop${params.size ? `?${params}` : ''}`);
+      }
+    }
+  };
 
   // Cart Calculations
   const cartCount = cart.reduce((total, item) => total + (Number(item?.quantity) || 0), 0);
 
-  const cartSubtotal = cart.reduce((sum, item) => {
-    if (!item || !item.product) return sum;
-    const isItemWholesale = (item.shoppingMode || shoppingMode) === 'wholesale';
-    const price = Number(
-      isItemWholesale
-        ? (item.unitPrice ?? item.product.wholesale_price ?? item.product.wholesalePrice ?? item.product.salePrice ?? 0)
-        : (item.product.salePrice ?? item.unitPrice ?? 0)
-    ) || 0;
-    const qty = Number(item.quantity) || 0;
-    return sum + (price * qty);
-  }, 0);
+  const cartSubtotal = calculateCartTotals(cart.filter((item) => item?.product), shoppingMode).subtotal;
 
   // Wholesale cart validation & eligibility
   const wholesaleCartErrors: string[] = [];
@@ -787,17 +809,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       eligibleItems = eligibleItems.filter((item) => appProducts.includes(item.product.id) || appProducts.includes(item.productId));
     }
 
-    const eligibleSubtotal = eligibleItems.reduce((sum, item) => {
-      if (!item || !item.product) return sum;
-      const isItemWholesale = (item.shoppingMode || shoppingMode) === 'wholesale';
-      const price = Number(
-        isItemWholesale
-          ? (item.unitPrice ?? item.product.wholesale_price ?? item.product.wholesalePrice ?? item.product.salePrice ?? 0)
-          : (item.product.salePrice ?? item.unitPrice ?? 0)
-      ) || 0;
-      const qty = Number(item.quantity) || 0;
-      return sum + (price * qty);
-    }, 0);
+    const eligibleSubtotal = eligibleItems.reduce((sum, item) => sum + getCartItemPrice(item, shoppingMode) * (Number(item.quantity) || 0), 0);
 
     if (discType === 'percentage') {
       const calculated = (eligibleSubtotal * discVal) / 100;
@@ -808,12 +820,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     cartDiscount = Math.floor(cartDiscount);
   }
 
-  const deliveryCharge =
-    cartSubtotal === 0 || cartSubtotal >= deliverySettings.freeDeliveryThreshold
-      ? 0
-      : deliverySettings.standardDeliveryFee;
-
-  const cartTotal = Math.max(0, cartSubtotal - cartDiscount + deliveryCharge);
+  const { shippingCharge: deliveryCharge, total: cartTotal } = calculateCartTotals(cart.filter((item) => item?.product), shoppingMode, cartDiscount);
 
   // Cart Handlers
   const addToCart = (
@@ -842,7 +849,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       ...product,
       images: safeImages,
       stock: Number(product.stock ?? 0),
-      salePrice: Number(product.salePrice ?? product.price ?? 0),
+      salePrice: getProductPrice(product, 'retail'),
     };
 
     // STRICT WHOLESALE VALIDATION & MIX COLOR SET ENFORCEMENT
@@ -1025,7 +1032,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           quantity: effectiveQty,
           shoppingMode: 'retail',
           totalPieces: effectiveQty,
-          unitPrice: normalizedProduct.salePrice,
+          unitPrice: getProductPrice(normalizedProduct, 'retail'),
           selectedVariants: {
             ...parsedVariants,
             ...(chosenSize ? { Size: chosenSize } : {}),
@@ -1284,7 +1291,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     // 5. Price Filter
-    const productPrice = Number(p.salePrice ?? p.retail_price ?? p.retailPrice ?? p.price ?? 0);
+    if (filters.collection === 'new-arrivals' && !p.isNew) return false;
+    if (filters.collection === 'featured' && !p.isFeatured) return false;
+    if (filters.collection === 'best-sellers' && !p.isBestSeller) return false;
+    const productPrice = getProductPrice(p, shoppingMode);
     if (productPrice < filters.minPrice || productPrice > filters.maxPrice) {
       return false;
     }
@@ -1295,7 +1305,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     // 7. Discount Filter
-    if (filters.discountMin && Number(p.discount || 0) < filters.discountMin) {
+    if (filters.discountMin && (getDiscountPercentage(Number(p.price), getProductPrice(p, 'retail')) || 0) < filters.discountMin) {
       return false;
     }
 
@@ -1323,11 +1333,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       case 'newest':
         return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       case 'price-low':
-        return a.salePrice - b.salePrice;
+        return getProductPrice(a, shoppingMode) - getProductPrice(b, shoppingMode);
       case 'price-high':
-        return b.salePrice - a.salePrice;
+        return getProductPrice(b, shoppingMode) - getProductPrice(a, shoppingMode);
       case 'discount':
-        return b.discount - a.discount;
+        return (getDiscountPercentage(Number(b.price), getProductPrice(b, 'retail')) || 0) - (getDiscountPercentage(Number(a.price), getProductPrice(a, 'retail')) || 0);
       case 'rating':
         return b.rating - a.rating;
       case 'popular':
@@ -1337,7 +1347,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   });
 
   // Place Order Action with Stock Reduction
-  const placeOrder = (_customer: ShippingAddress, _paymentMethod: PaymentMethod, _notes?: string, _paymentDetails?: { paymentStatus?: PaymentStatus; razorpayPaymentId?: string; razorpayOrderId?: string; razorpaySignature?: string }): Order | null => {
+  const placeOrder = (_customer: ShippingAddress, _paymentMethod: PaymentMethod, _notes?: string, _paymentDetails?: { paymentStatus?: PaymentStatus }): Order | null => {
     console.error('Client-side order creation is disabled. Checkout must use the secure Firebase Cloud Function.');
     return null;
   };
@@ -1569,7 +1579,7 @@ Product Code: ${product.sku}`;
         selectedProduct,
         setSelectedProduct,
         openProductDetails,
-        closeProductDetails: () => setSelectedProduct(null),
+        closeProductDetails,
         shops,
         activeShop,
         setActiveShopId,

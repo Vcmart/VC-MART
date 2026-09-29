@@ -15,6 +15,7 @@ export const ShopView: React.FC = () => {
     setSearchQuery,
     shops,
     activeShop,
+    shoppingMode,
     setCurrentView,
   } = useStore();
 
@@ -48,6 +49,9 @@ export const ShopView: React.FC = () => {
   return (
     <div className="bg-[#FAF7F2] min-h-screen py-6 sm:py-10">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="mb-4 rounded-xl border border-[#E8DEC8] bg-white px-4 py-3 text-xs text-stone-700">
+          {shoppingMode === 'wholesale' ? <><strong className="text-blue-900">Wholesale Mode</strong> · Prices shown are Wholesale per Set · Minimum purchase: 1 Complete Set · Wholesale Delivery: ₹250 per Complete Set</> : <><strong className="text-[#7A3F0E]">Retail Mode</strong> · FREE DELIVERY on retail orders</>}
+        </div>
         {/* Breadcrumb Navigation */}
         <nav className="flex items-center gap-1.5 text-xs text-stone-500 mb-4">
           <button

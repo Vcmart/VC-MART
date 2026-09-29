@@ -3,7 +3,7 @@ import { getDownloadURL, ref, uploadBytesResumable, deleteObject } from 'firebas
 import { createUserWithEmailAndPassword, sendPasswordResetEmail, signInWithEmailAndPassword, signOut, updateProfile, onAuthStateChanged, type User } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
 import { auth, db, storage, firebaseApp, requireFirebase } from './firebase';
-import type { Coupon, Order, Product, UserProfile } from '../types';
+import type { Coupon, Order, Product, UserProfile, OfferSlide } from '../types';
 export { auth };
 
 const docs = (name: string) => collection(requireFirebase().db, name);
@@ -189,7 +189,7 @@ export const watchStoreSettings = (next: (settings: StoreSettings) => void, erro
       lowStockThreshold: Math.max(0, Math.floor(Number(data.lowStockThreshold ?? 5))),
     });
   }, error);
-export async function saveStoreSettings(settings: StoreSettings) {
+export async function saveStoreSettings(settings: Partial<StoreSettings>) {
   await setDoc(doc(requireFirebase().db, 'settings', 'store'), { ...settings, updatedAt: new Date().toISOString() }, { merge: true });
 }
 export type HomepageShopImages = Record<string, string>;
@@ -203,6 +203,14 @@ export async function saveHomepageShopImage(shopId: string, imageUrl: string) {
     shopImages: { [shopId]: imageUrl },
     updatedAt: new Date().toISOString(),
   }, { merge: true });
+}
+export const watchOfferSlides = (next: (slides: OfferSlide[] | null) => void, error: (reason: Error) => void): Unsubscribe =>
+  onSnapshot(doc(requireFirebase().db, 'settings', 'homepage'), (snap) => {
+    const slides = snap.data()?.offerSlides;
+    next(Array.isArray(slides) ? slides as OfferSlide[] : null);
+  }, error);
+export async function saveOfferSlides(slides: OfferSlide[]) {
+  await setDoc(doc(requireFirebase().db, 'settings', 'homepage'), { offerSlides: slides, updatedAt: new Date().toISOString() }, { merge: true });
 }
 export const watchShops = (next: (shops: Array<Record<string, any>>) => void, error: (reason: Error) => void, includeInactive = false): Unsubscribe => {
   const base = includeInactive ? query(docs('shops'), limit(100)) : query(docs('shops'), where('status', '==', 'active'), limit(100));

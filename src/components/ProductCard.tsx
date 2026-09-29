@@ -4,6 +4,7 @@ import { Product } from '../types';
 import { useStore } from '../context/StoreContext';
 import { isClothingCategory } from '../utils/clothingSizes';
 import { getDiscountPercentage, getProductImageUrls } from '../utils/productPresentation';
+import { getProductPrice, getProductMrp } from '../utils/pricing';
 import { ProductImageLightbox } from './ProductImageLightbox';
 
 interface ProductCardProps {
@@ -26,9 +27,11 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, badgeText }) 
 
   const isWholesale = shoppingMode === 'wholesale';
   const productImages = getProductImageUrls(product);
-  const discountPercentage = getDiscountPercentage(product.price, product.salePrice);
+  const retailPrice = getProductPrice(product, 'retail');
+  const mrp = getProductMrp(product);
+  const discountPercentage = getDiscountPercentage(mrp, retailPrice);
   const setSize = product.set_size || product.setSize || 12;
-  const wholesalePrice = product.wholesale_price ?? product.wholesalePrice ?? product.salePrice;
+  const wholesalePrice = getProductPrice(product, 'wholesale');
   const minSets = product.wholesale_minimum_sets || product.wholesaleMinimumSets || 1;
 
   const isOutOfStock = isWholesale ? product.stock < setSize : product.stock <= 0;
@@ -230,22 +233,19 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, badgeText }) 
             </div>
           ) : (
             /* RETAIL PRICING DISPLAY */
-            <div className="flex items-baseline gap-2 mb-2.5">
-              <span className="text-base sm:text-lg font-extrabold text-[#7A3F0E]">
-                ₹{product.salePrice.toLocaleString('en-IN')}
-              </span>
+            <div className="mb-2.5">
+              {discountPercentage !== null && <span className="block text-[10px] text-stone-500">MRP <span className="line-through">₹{mrp.toLocaleString('en-IN')}</span></span>}
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+              <span className="text-lg sm:text-xl font-extrabold text-[#7A3F0E]">₹{retailPrice.toLocaleString('en-IN')}</span>
               {discountPercentage !== null && (
-                <span className="text-xs text-stone-400 line-through">
-                  ₹{product.price.toLocaleString('en-IN')}
-                </span>
-              )}
-              {discountPercentage !== null && (
-                <span className="text-[10px] font-bold text-emerald-700 ml-auto bg-emerald-50 px-1.5 py-0.5 rounded">
+                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">
                   {discountPercentage}% OFF
                 </span>
               )}
+              </div>
             </div>
           )}
+          <p className="text-[10px] font-bold text-emerald-700 mb-2">{isWholesale ? '₹250 / SET DELIVERY' : 'FREE DELIVERY'}</p>
 
           {/* Buttons: Add to Cart & Buy Now */}
           <div className="grid grid-cols-2 gap-1 sm:gap-2">

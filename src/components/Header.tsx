@@ -41,7 +41,6 @@ export const Header: React.FC = () => {
     isAdminLoggedIn,
     shoppingMode,
     setShoppingMode,
-    freeDeliveryThreshold,
     openAuthModal,
     isAccountDrawerOpen,
     setIsAccountDrawerOpen,
@@ -114,7 +113,7 @@ export const Header: React.FC = () => {
           <div className="flex items-center gap-2 sm:gap-4 truncate">
             <span className="flex items-center gap-1 font-medium text-[#DFB062] truncate">
               <Truck size={13} className="shrink-0 text-[#DFB062]" />
-              <span className="truncate">Free Delivery on Orders &gt; ₹{freeDeliveryThreshold}</span>
+              <span className="truncate">{shoppingMode === 'wholesale' ? 'Wholesale Delivery: ₹250 per Set' : 'FREE DELIVERY on retail orders'}</span>
             </span>
             <span className="hidden md:inline-flex items-center gap-1 text-[#C8B29E]">
               <ShieldCheck size={13} className="text-emerald-400 shrink-0" /> 100% Genuine Products

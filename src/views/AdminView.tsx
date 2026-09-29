@@ -46,6 +46,7 @@ import {
 import { uploadProductImage, saveProduct, findProductBySku, saveStoreSettings, FIREBASE_CONFIG, PRODUCT_STORAGE_PATH, STORAGE_FIREBASE_SETUP, VARIANTS_FIREBASE_SETUP } from '../lib/firebaseRepository';
 import { initialShops } from '../config/siteConfig';
 import { HomepageShopImagesManager } from '../components/HomepageShopImagesManager';
+import { AdminOffersManager } from '../components/AdminOffersManager';
 
 const createProductDraftId = () => `prod-${crypto.randomUUID()}`;
 
@@ -70,24 +71,18 @@ export const AdminView: React.FC = () => {
     fetchOrdersFromCloud,
     currentUser,
     openAuthModal,
-    freeDeliveryThreshold,
-    standardDeliveryFee,
     lowStockThreshold,
   } = useStore();
 
   const [activeTab, setActiveTab] = useState<
-    'dashboard' | 'products' | 'inventory' | 'orders' | 'shops' | 'branding' | 'coupons' | 'settings'
+    'dashboard' | 'products' | 'inventory' | 'orders' | 'shops' | 'branding' | 'offers' | 'coupons' | 'settings'
   >('dashboard');
-  const [freeThresholdInput, setFreeThresholdInput] = useState(freeDeliveryThreshold);
-  const [deliveryFeeInput, setDeliveryFeeInput] = useState(standardDeliveryFee);
   const [lowStockThresholdInput, setLowStockThresholdInput] = useState(lowStockThreshold);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsMessage, setSettingsMessage] = useState<string | null>(null);
   useEffect(() => {
-    setFreeThresholdInput(freeDeliveryThreshold);
-    setDeliveryFeeInput(standardDeliveryFee);
     setLowStockThresholdInput(lowStockThreshold);
-  }, [freeDeliveryThreshold, standardDeliveryFee, lowStockThreshold]);
+  }, [lowStockThreshold]);
 
   const [copiedInstructions, setCopiedInstructions] = useState(false);
   const [isFetchingFromCloud, setIsFetchingFromCloud] = useState(false);
@@ -255,7 +250,7 @@ export const AdminView: React.FC = () => {
       return (
         sum +
         itemsInShop.reduce(
-          (iSum, it) => iSum + (it.product?.salePrice || it.price) * it.quantity,
+          (iSum, it) => iSum + Number(it.unitPrice ?? it.price ?? 0) * it.quantity,
           0
         )
       );
@@ -721,6 +716,8 @@ export const AdminView: React.FC = () => {
             <Tag size={16} />
             <span>Coupons ({coupons.length})</span>
           </button>
+
+          <button type="button" onClick={() => setActiveTab('offers')} className={`px-4 py-2.5 rounded-t-2xl text-xs font-bold flex items-center gap-2 border-b-2 ${activeTab === 'offers' ? 'bg-white border-[#965215] text-[#965215]' : 'text-stone-600 border-transparent'}`}><Sparkles size={16} />Homepage Offers</button>
 
           <button
             onClick={() => setActiveTab('settings')}
@@ -1646,6 +1643,7 @@ export const AdminView: React.FC = () => {
         )}
 
         {/* 5. LOGO & BRANDING TAB */}
+        {activeTab === 'offers' && <AdminOffersManager />}
         {activeTab === 'branding' && (
           <div className="bg-white p-6 sm:p-8 rounded-3xl border border-[#E8DEC8] shadow-xs">
             <LogoManager />
@@ -1656,26 +1654,20 @@ export const AdminView: React.FC = () => {
         {activeTab === 'settings' && (
           <section className="rounded-3xl border border-[#E8DEC8] bg-white p-6 sm:p-8 shadow-sm">
             <h2 className="font-['Marcellus'] text-xl font-bold text-stone-900">Store settings</h2>
-            <p className="mt-2 text-sm text-stone-600">Delivery policy is saved in Firestore and updates across the storefront and checkout.</p>
+            <p className="mt-2 text-sm text-stone-600">Retail delivery is free. Wholesale delivery is ₹250 per complete set. Inventory alerts use the threshold below.</p>
             <form className="mt-5 grid gap-4 sm:grid-cols-2" onSubmit={async (event) => {
               event.preventDefault(); setSettingsSaving(true); setSettingsMessage(null);
               try {
-                await saveStoreSettings({ freeDeliveryThreshold: Math.max(0, Math.floor(freeThresholdInput)), standardDeliveryFee: Math.max(0, Math.floor(deliveryFeeInput)), lowStockThreshold: Math.max(0, Math.floor(lowStockThresholdInput)) });
-                setSettingsMessage('Delivery and inventory settings saved to Firebase.');
+                await saveStoreSettings({ lowStockThreshold: Math.max(0, Math.floor(lowStockThresholdInput)) });
+                setSettingsMessage('Inventory settings saved to Firebase.');
               } catch (error) { setSettingsMessage(error instanceof Error ? error.message : 'Could not save settings.'); }
               finally { setSettingsSaving(false); }
             }}>
-              <label className="text-sm font-semibold text-stone-700">Free delivery threshold (₹)
-                <input type="number" min="0" required value={freeThresholdInput} onChange={(event) => setFreeThresholdInput(Number(event.target.value))} className="mt-1 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-2" />
-              </label>
-              <label className="text-sm font-semibold text-stone-700">Standard delivery fee (₹)
-                <input type="number" min="0" required value={deliveryFeeInput} onChange={(event) => setDeliveryFeeInput(Number(event.target.value))} className="mt-1 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-2" />
-              </label>
               <label className="text-sm font-semibold text-stone-700">Low-stock threshold
                 <input type="number" min="0" required value={lowStockThresholdInput} onChange={(event) => setLowStockThresholdInput(Number(event.target.value))} className="mt-1 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-2" />
               </label>
               <div className="sm:col-span-2 flex items-center gap-3">
-                <button disabled={settingsSaving} className="rounded-xl bg-[#965215] px-4 py-2 text-sm font-bold text-white disabled:opacity-50">{settingsSaving ? 'Saving…' : 'Save delivery settings'}</button>
+                <button disabled={settingsSaving} className="rounded-xl bg-[#965215] px-4 py-2 text-sm font-bold text-white disabled:opacity-50">{settingsSaving ? 'Saving…' : 'Save inventory settings'}</button>
                 {settingsMessage && <span role="status" className="text-sm text-stone-600">{settingsMessage}</span>}
               </div>
             </form>

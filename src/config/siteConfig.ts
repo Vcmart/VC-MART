@@ -30,8 +30,8 @@ export const siteConfig = {
   paymentOptions: [
     {
       id: 'razorpay',
-      title: 'Razorpay Secure Gateway',
-      description: 'Pay via Google Pay, PhonePe, Paytm, BHIM UPI, Cards & NetBanking.',
+      title: 'Pay Online Securely',
+      description: 'Pay through Razorpay; your order is confirmed after server verification.',
       available: true,
     },
     {

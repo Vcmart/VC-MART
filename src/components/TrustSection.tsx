@@ -31,7 +31,7 @@ export const TrustSection: React.FC = () => {
     {
       icon: Lock,
       title: 'Secure Payments',
-      desc: 'Razorpay Secure Gateway (UPI, Cards, NetBanking) & Cash on Delivery.',
+      desc: 'Pay online through Razorpay or choose Cash on Delivery for eligible orders.',
     },
     {
       icon: Truck,

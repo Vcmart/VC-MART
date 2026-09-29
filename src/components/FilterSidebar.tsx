@@ -112,14 +112,14 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({ onCloseMobile }) =
       <div>
         <div className="flex items-center justify-between mb-2">
           <h4 className="text-xs font-bold uppercase tracking-wider text-stone-700">Price Range</h4>
-          <span className="text-xs font-bold text-[#7A3F0E]">Up to ₹{filters.maxPrice}</span>
+          <span className="text-xs font-bold text-[#7A3F0E]">{filters.maxPrice === Number.MAX_SAFE_INTEGER ? 'Any price' : `Up to ₹${filters.maxPrice.toLocaleString('en-IN')}`}</span>
         </div>
         <input
           type="range"
           min={100}
-          max={5000}
+          max={Math.max(5000, ...products.map((product) => Number(product.wholesale_price ?? product.wholesalePrice ?? product.salePrice ?? 0)))}
           step={50}
-          value={filters.maxPrice}
+          value={Math.min(filters.maxPrice, Math.max(5000, ...products.map((product) => Number(product.wholesale_price ?? product.wholesalePrice ?? product.salePrice ?? 0))))}
           onChange={(e) =>
             setFilters((prev) => ({ ...prev, maxPrice: Number(e.target.value) }))
           }
@@ -128,7 +128,7 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({ onCloseMobile }) =
         <div className="flex items-center justify-between text-[10px] text-stone-500 mt-1">
           <span>₹100</span>
           <span>₹2,500</span>
-          <span>₹5,000+</span>
+          <span>Higher prices included by default</span>
         </div>
       </div>
 

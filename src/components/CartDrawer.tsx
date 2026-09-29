@@ -13,6 +13,7 @@ import {
   Minus,
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
+import { getCartItemPrice, WHOLESALE_DELIVERY_PER_SET } from '../utils/pricing';
 import { Logo } from './Logo';
 import { getColorHex, safeStringArray } from '../utils/clothingSizes';
 
@@ -22,7 +23,6 @@ export const CartDrawer: React.FC = () => {
     cartSubtotal,
     cartDiscount,
     deliveryFee,
-    freeDeliveryThreshold,
     cartTotal,
     appliedCoupon,
     applyCoupon,
@@ -77,7 +77,6 @@ export const CartDrawer: React.FC = () => {
     }
   };
 
-  const freeDeliveryDiff = freeDeliveryThreshold - cartSubtotal;
   const hasWholesaleItems = cart.some((item) => item?.product && (item.shoppingMode || shoppingMode) === 'wholesale');
   const hasRetailItems = cart.some((item) => item?.product && (item.shoppingMode || shoppingMode) === 'retail');
 
@@ -102,19 +101,9 @@ export const CartDrawer: React.FC = () => {
           </button>
         </div>
 
-        {/* Free Delivery Bar */}
+        {/* Delivery policy for the items actually in this cart */}
         <div className="bg-[#2A1810] text-white px-4 py-2 text-xs flex items-center justify-between">
-          {freeDeliveryDiff > 0 ? (
-            <span className="text-[#EAD8C3]">
-              Add <strong className="text-[#DFB062]">₹{freeDeliveryDiff}</strong> more for{' '}
-              <strong className="text-emerald-400">FREE Delivery</strong>
-            </span>
-          ) : (
-            <span className="text-emerald-400 font-semibold flex items-center gap-1">
-              <Truck size={14} /> You&apos;ve unlocked FREE Delivery across India!
-            </span>
-          )}
-          <span className="text-[10px] text-stone-400">Min. ₹{freeDeliveryThreshold}</span>
+          <span className="text-[#EAD8C3] flex items-center gap-1"><Truck size={14} />{hasWholesaleItems ? 'Wholesale Delivery: ₹250 per Complete Set' : 'FREE DELIVERY on retail orders'}</span>
         </div>
 
         {/* 2. Items List */}
@@ -151,11 +140,7 @@ export const CartDrawer: React.FC = () => {
                 ? safeStringArray(rawColors)
                 : ['Black', 'White', 'Blue', 'Red', 'Green', 'Maroon'];
               const setSize = Number(item.product.setSize || item.product.set_size || wholesaleMixColors.length || 6);
-              const unitPrice = Number(
-                isItemWholesale
-                  ? (item.unitPrice ?? item.product.wholesale_price ?? item.product.wholesalePrice ?? item.product.salePrice ?? 0)
-                  : (item.product.salePrice ?? item.unitPrice ?? 0)
-              ) || 0;
+              const unitPrice = getCartItemPrice(item, shoppingMode);
               const totalPieces = Number(item.totalPieces ?? (isItemWholesale ? item.quantity * setSize : item.quantity)) || item.quantity;
               const prodStock = Number(item.product.stock ?? 0);
               const hasInsufficientStock = isItemWholesale
@@ -399,11 +384,11 @@ export const CartDrawer: React.FC = () => {
               )}
 
               <div className="flex justify-between">
-                <span>Estimated Delivery</span>
+                <span>{hasWholesaleItems ? `Wholesale Delivery (₹${WHOLESALE_DELIVERY_PER_SET} × ${cart.filter((item) => (item.shoppingMode || shoppingMode) === 'wholesale').reduce((sum, item) => sum + item.quantity, 0)} Sets)` : 'Delivery'}</span>
                 {deliveryFee === 0 ? (
                   <span className="font-bold text-emerald-700">FREE</span>
                 ) : (
-                  <span className="font-semibold text-stone-900">₹{deliveryFee}</span>
+                  <span className="font-semibold text-stone-900">₹{deliveryFee.toLocaleString('en-IN')}</span>
                 )}
               </div>
 

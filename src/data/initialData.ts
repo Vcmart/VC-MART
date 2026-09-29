@@ -6,7 +6,7 @@ export function ensureProductWholesaleFields(input: Product): Product {
   const p = input || ({} as Product);
   const setSize = Math.max(1, Math.floor(Number(p.setSize ?? p.set_size ?? 12) || 12));
   const wholesaleMinimumSets = Math.max(1, Math.floor(Number(p.wholesaleMinimumSets ?? p.wholesale_minimum_sets ?? 1) || 1));
-  const retailPrice = Math.max(0, Number(p.retailPrice ?? p.retail_price ?? p.salePrice ?? p.price ?? 0) || 0);
+  const retailPrice = Math.max(0, Number(p.salePrice ?? p.retail_price ?? p.retailPrice ?? p.price ?? 0) || 0);
   const wholesalePrice = Math.max(0, Number(p.wholesalePrice ?? p.wholesale_price ?? Math.round(retailPrice * 0.65 * setSize)) || 0);
   const sizeVariants = (Array.isArray(p.sizeVariants) ? p.sizeVariants : Array.isArray(p.size_variants) ? p.size_variants : []).map((variant) => ({
     ...variant,
@@ -34,7 +34,7 @@ export function ensureProductWholesaleFields(input: Product): Product {
     description: p.description || '',
     shortDescription: p.shortDescription || '',
     images,
-    price: retailPrice,
+    price: Math.max(0, Number(p.price ?? retailPrice) || 0),
     salePrice: retailPrice,
     retailPrice,
     wholesalePrice,

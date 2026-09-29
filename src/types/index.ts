@@ -161,6 +161,24 @@ export interface Product {
 
 export type ShoppingMode = 'retail' | 'wholesale';
 
+export interface OfferSlide {
+  id: string;
+  title: string;
+  subtitle: string;
+  badge: string;
+  description: string;
+  imageUrl: string;
+  ctaText: string;
+  discountText: string;
+  active: boolean;
+  displayOrder: number;
+  startDate: string;
+  endDate: string;
+  destinationType: 'product' | 'category' | 'shop' | 'collection' | 'offer' | 'search';
+  destinationValue: string;
+  shopId: string;
+}
+
 export interface CartItem {
   id: string;
   productId: string;
@@ -353,6 +371,7 @@ export interface CustomerReview {
 
 export interface FilterState {
   shopId: ShopId | 'all';
+  collection?: 'new-arrivals' | 'featured' | 'best-sellers';
   categoryId?: string;
   subcategoryId?: string;
   searchQuery?: string;

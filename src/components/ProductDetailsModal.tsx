@@ -23,6 +23,7 @@ import { Logo } from './Logo';
 import { SizeChartModal } from './SizeChartModal';
 import { ProductImageLightbox } from './ProductImageLightbox';
 import { getDiscountPercentage } from '../utils/productPresentation';
+import { getProductPrice, getProductMrp } from '../utils/pricing';
 import {
   isClothingCategory,
   getProductColors,
@@ -53,9 +54,7 @@ export const ProductDetailsModal: React.FC = () => {
   const setSize = selectedProduct
     ? Number(selectedProduct.setSize || selectedProduct.set_size || wholesaleMixColors.length || 6)
     : 6;
-  const wholesalePrice = Number(
-    selectedProduct ? (selectedProduct.wholesale_price ?? selectedProduct.wholesalePrice ?? selectedProduct.salePrice ?? 0) : 0
-  ) || 0;
+  const wholesalePrice = selectedProduct ? getProductPrice(selectedProduct, 'wholesale') : 0;
   const minSets = selectedProduct ? (selectedProduct.wholesale_minimum_sets || selectedProduct.wholesaleMinimumSets || 1) : 1;
   const maxSetsAvailable = selectedProduct ? Math.floor(Number(selectedProduct.stock ?? 0) / (setSize || 1)) : 0;
 
@@ -108,7 +107,9 @@ export const ProductDetailsModal: React.FC = () => {
 
   const colorImages = availableColors.map((c) => c.imageUrl).filter(Boolean) as string[];
   const productImages = Array.from(new Set([...baseImages, ...colorImages]));
-  const discountPercentage = getDiscountPercentage(selectedProduct.price, selectedProduct.salePrice);
+  const retailPrice = getProductPrice(selectedProduct, 'retail');
+  const mrp = getProductMrp(selectedProduct);
+  const discountPercentage = getDiscountPercentage(mrp, retailPrice);
 
   const isOutOfStock = isWholesale ? selectedProduct.stock < setSize : selectedProduct.stock <= 0;
   const isFavorite = isInWishlist(selectedProduct.id);
@@ -441,27 +442,20 @@ export const ProductDetailsModal: React.FC = () => {
                         Available Stock: <strong>{selectedProduct.stock} pcs</strong> ({maxSetsAvailable} sets)
                       </span>
                     </div>
+                    <p className="mt-2 text-xs font-semibold text-blue-900">Wholesale Delivery: ₹250 per Complete Set</p>
                   </div>
                 ) : (
                   <div className="mt-4 bg-[#FAF7F2] p-4 rounded-2xl border border-[#E8DEC8]">
-                    <div className="flex items-baseline gap-3">
-                      <span className="text-2xl sm:text-3xl font-extrabold text-[#7A3F0E]">
-                        ₹{selectedProduct.salePrice.toLocaleString('en-IN')}
-                      </span>
-                      {discountPercentage !== null && (
-                        <span className="text-sm text-stone-400 line-through">
-                          ₹{selectedProduct.price.toLocaleString('en-IN')}
-                        </span>
-                      )}
+                    {discountPercentage !== null && <p className="text-xs text-stone-500">MRP <span className="line-through">₹{mrp.toLocaleString('en-IN')}</span></p>}
+                    <div className="flex flex-wrap items-baseline gap-3">
+                      <span className="text-2xl sm:text-3xl font-extrabold text-[#7A3F0E]">₹{retailPrice.toLocaleString('en-IN')}</span>
                       {discountPercentage !== null && (
                         <span className="text-xs font-bold px-2 py-0.5 bg-[#B91C1C] text-white rounded-full">
                           {discountPercentage}% OFF
                         </span>
                       )}
                     </div>
-                    <p className="text-[11px] text-stone-500 mt-1">
-                      Inclusive of all taxes &bull; Free Shipping across India on orders over ₹499
-                    </p>
+                    <p className="text-[11px] text-stone-500 mt-1">Inclusive of all taxes &bull; FREE DELIVERY{discountPercentage !== null ? ` · You save ₹${(mrp - retailPrice).toLocaleString('en-IN')}` : ''}</p>
                   </div>
                 )}
 
@@ -865,7 +859,7 @@ export const ProductDetailsModal: React.FC = () => {
                         Total Pieces: <strong>{quantity * setSize} pieces</strong> ({quantity} Set{quantity > 1 ? 's' : ''} &times; {setSize})
                       </span>
                       <span>
-                        Total Price: <strong>₹{(wholesalePrice * quantity).toLocaleString('en-IN')}</strong>
+                        Est. total incl. delivery: <strong>₹{((wholesalePrice + 250) * quantity).toLocaleString('en-IN')}</strong>
                       </span>
                     </div>
                   )}
@@ -1024,7 +1018,7 @@ export const ProductDetailsModal: React.FC = () => {
                 <div className="mt-6 pt-4 border-t border-stone-100 grid grid-cols-3 gap-2 text-center text-[10px] text-stone-600">
                   <div className="flex flex-col items-center">
                     <Truck size={16} className="text-[#965215] mb-1" />
-                    <span>Free Delivery &gt;₹499</span>
+                    <span>{isWholesale ? '₹250 / Set Delivery' : 'FREE DELIVERY'}</span>
                   </div>
                   <div className="flex flex-col items-center">
                     <RotateCcw size={16} className="text-[#965215] mb-1" />

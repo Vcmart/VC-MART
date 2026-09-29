@@ -1103,7 +1103,7 @@ export function normalizeProductFields(raw: any): Product {
   }
 
   const retailPrice = Number(raw.salePrice ?? raw.sale_price ?? raw.retail_price ?? raw.retailPrice ?? raw.price ?? 499);
-  const mrpPrice = Math.max(retailPrice, Number(raw.price || Math.round(retailPrice * 1.5)));
+  const mrpPrice = Math.max(0, Number(raw.price ?? raw.mrp ?? raw.mrp_price ?? retailPrice) || 0);
   const discount = Number(raw.discount ?? (mrpPrice > retailPrice ? Math.round(((mrpPrice - retailPrice) / mrpPrice) * 100) : 0));
   const setSize = Math.max(1, Number(raw.set_size ?? raw.setSize ?? 12));
   const wholesalePrice = Number(raw.wholesale_price ?? raw.wholesalePrice ?? Math.round(retailPrice * 0.65 * setSize));
