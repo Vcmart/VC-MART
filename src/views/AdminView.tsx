@@ -1442,7 +1442,6 @@ export const AdminView: React.FC = () => {
                                   {/* Status dropdown */}
                                   <select
                                     value={order.orderStatus}
-                                    disabled={order.paymentMethod === 'razorpay' && order.paymentStatus !== 'paid'}
                                     onChange={(e) => {
                                       void updateOrderStatus(order.id, e.target.value as any)
                                         .then(() => setFirebaseFeedback(`Order ${order.orderNumber || order.id} updated in Firebase.`))
@@ -1451,14 +1450,14 @@ export const AdminView: React.FC = () => {
                                     className="text-xs font-bold py-1.5 px-3 bg-stone-50 border border-stone-300 rounded-xl focus:border-[#965215] cursor-pointer"
                                   >
                                     <option value="pending">Pending</option>
-                                    <option value="confirmed">Confirmed</option>
-                                    <option value="processing">Processing</option>
-                                    <option value="packed">Packed</option>
-                                    <option value="shipped">Shipped</option>
-                                    <option value="out_for_delivery">Out for Delivery</option>
-                                    <option value="delivered">Delivered</option>
+                                    <option value="confirmed" disabled={order.paymentMethod === 'razorpay' && order.paymentStatus !== 'paid'}>Confirmed</option>
+                                    <option value="processing" disabled={order.paymentMethod === 'razorpay' && order.paymentStatus !== 'paid'}>Processing</option>
+                                    <option value="packed" disabled={order.paymentMethod === 'razorpay' && order.paymentStatus !== 'paid'}>Packed</option>
+                                    <option value="shipped" disabled={order.paymentMethod === 'razorpay' && order.paymentStatus !== 'paid'}>Shipped</option>
+                                    <option value="out_for_delivery" disabled={order.paymentMethod === 'razorpay' && order.paymentStatus !== 'paid'}>Out for Delivery</option>
+                                    <option value="delivered" disabled={order.paymentMethod === 'razorpay' && order.paymentStatus !== 'paid'}>Delivered</option>
                                     <option value="cancelled">Cancelled</option>
-                                    <option value="returned">Returned</option>
+                                    <option value="returned" disabled={order.paymentMethod === 'razorpay' && order.paymentStatus !== 'paid'}>Returned</option>
                                   </select>
 
                                   {/* WhatsApp Customer */}

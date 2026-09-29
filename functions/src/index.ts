@@ -399,7 +399,7 @@ async function finalizeCapturedPayment(orderId: string, paymentId: string) {
     if (!fulfillmentReview) for (const update of updates) tx.update(update.ref, { ...update.patch, updatedAt: new Date().toISOString() });
     tx.update(orderRef, {
       paymentStatus: 'paid', razorpayPaymentId: paymentId, paidAt: new Date().toISOString(),
-      orderStatus: data.orderStatus === 'pending' ? 'confirmed' : data.orderStatus,
+      orderStatus: 'confirmed',
       fulfillmentReview, updatedAt: new Date().toISOString(),
     });
     if (couponRef && usageRef && couponSnap?.exists) {
@@ -470,7 +470,7 @@ export const updateOrderStatus = onCall({ region: 'asia-south1', invoker: 'publi
   if (typeof orderId !== 'string' || !orderId) fail('An order ID is required.');
   const existing = (await db.doc(`orders/${orderId}`).get()).data();
   if (!existing) fail('Order was not found.');
-  if (existing.paymentMethod === 'razorpay' && existing.paymentStatus !== 'paid') fail('Online payment must be captured before this order status can change.');
+  if (existing.paymentMethod === 'razorpay' && existing.paymentStatus !== 'paid' && orderStatus !== 'cancelled') fail('Online payment must be captured before this order status can change.');
   const patch: Record<string, unknown> = { orderStatus, updatedAt: new Date().toISOString() };
   if (trackingNumber !== undefined) {
     if (typeof trackingNumber !== 'string' || trackingNumber.length > 100) fail('Invalid tracking number.');
