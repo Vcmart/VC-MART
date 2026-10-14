@@ -5,6 +5,7 @@ import { isFirebaseConfigured } from '../lib/firebase';
 import { watchOfferSlides } from '../lib/firebaseRepository';
 import type { OfferSlide, ShopId } from '../types';
 import { getVisibleOfferSlides } from '../utils/offerSlides';
+import { OfferBannerImage } from './OfferBannerImage';
 
 const makeDefault = (id: string, title: string, subtitle: string, imageUrl: string, order: number): OfferSlide => ({
   id, title, subtitle, imageUrl, badge: 'EXPLORE VC MART', description: 'Discover quality products from our trusted Indian shops.',
@@ -74,8 +75,8 @@ export const HeroBanner: React.FC = () => {
     <div className="relative mx-auto max-w-7xl overflow-hidden rounded-3xl bg-[#2A1810] shadow-xl" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)} onFocusCapture={() => setPaused(true)} onBlurCapture={() => setPaused(false)} aria-label="Featured offers">
       <div className="relative h-[330px] sm:h-[360px] lg:h-[390px]">
         {slides.map((slide, position) => <div key={slide.id} className={`absolute inset-0 transition-opacity duration-700 ${position === index ? 'z-10 opacity-100' : 'pointer-events-none opacity-0'}`} aria-hidden={position !== index}>
-          <img src={slide.imageUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
-          <div className="absolute inset-0 bg-gradient-to-r from-[#21130e]/95 via-[#21130e]/75 to-[#21130e]/20" />
+          <OfferBannerImage key={slide.imageUrl} imageUrl={slide.imageUrl || ''} offerId={slide.id} />
+          <div className="absolute inset-0 bg-gradient-to-r from-[#21130e]/85 via-[#21130e]/55 to-[#21130e]/15" />
           <button type="button" tabIndex={position === index ? 0 : -1} onClick={() => openOffer(slide)} className="absolute inset-0 z-10 flex w-full cursor-pointer items-center p-7 text-left sm:p-12 lg:p-16">
             <span className="block max-w-xl text-white">
               <span className="mb-3 inline-block rounded-full border border-amber-300/50 bg-[#965215]/70 px-3 py-1 text-[10px] font-bold tracking-widest text-amber-100">{slide.badge}</span>

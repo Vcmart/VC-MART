@@ -3,6 +3,8 @@ import { saveOfferSlides, watchOfferSlides } from '../lib/firebaseRepository';
 import type { OfferSlide } from '../types';
 import { useStore } from '../context/StoreContext';
 import { initialShops } from '../config/siteConfig';
+import { uploadOfferImage, validateOfferImage } from '../lib/offerImages';
+import { OfferBannerImage } from './OfferBannerImage';
 
 const emptySlide = (): OfferSlide => ({
   id: crypto.randomUUID(), title: '', subtitle: '', badge: '', description: '', imageUrl: '',
@@ -20,8 +22,17 @@ export const AdminOffersManager: React.FC = () => {
   useEffect(() => watchOfferSlides((remote) => setSlides(remote || []), (error) => setMessage(error.message)), []);
   const save = async (next: OfferSlide[]) => {
     setBusy(true); setMessage('');
-    try { await saveOfferSlides(next); setDraft(null); setMessage('Offers saved.'); }
-    catch (error) { setMessage(error instanceof Error ? error.message : 'Could not save offers.'); }
+    try {
+      if (draft && next.some((slide) => slide.id === draft.id)) {
+        const imageUrl = await validateOfferImage(draft.imageUrl);
+        next = next.map((slide) => slide.id === draft.id ? { ...slide, imageUrl } : slide);
+      }
+      await saveOfferSlides(next); setDraft(null); setMessage('Offers saved.');
+    }
+    catch (error) {
+      console.error('Homepage offer save failed', { offerId: draft?.id });
+      setMessage(error instanceof Error ? error.message : 'Could not save offers.');
+    }
     finally { setBusy(false); }
   };
   const field = (key: keyof OfferSlide, label: string, type = 'text') => <label className="block text-xs font-bold text-stone-700">
@@ -43,8 +54,29 @@ export const AdminOffersManager: React.FC = () => {
       event.preventDefault();
       if (!draft.title.trim() || !draft.imageUrl.trim() || !draft.destinationValue.trim()) { setMessage('Title, image URL and destination are required.'); return; }
       if (draft.endDate && draft.startDate && draft.endDate < draft.startDate) { setMessage('End date must follow start date.'); return; }
-      void save([...slides.filter((item) => item.id !== draft.id), draft]);
+      if (!busy) void save([...slides.filter((item) => item.id !== draft.id), draft]);
     }}>
+      <fieldset disabled={busy} className="space-y-4">
+      <label className="block text-xs font-bold text-stone-700">Upload banner image
+        <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="mt-1 block w-full text-sm font-normal" onChange={async (event) => {
+          const file = event.target.files?.[0];
+          event.target.value = '';
+          if (!file) return;
+          const offerId = draft.id;
+          setBusy(true); setMessage('Uploading banner image…');
+          try {
+            const imageUrl = await uploadOfferImage(file);
+            await validateOfferImage(imageUrl);
+            setDraft((old) => old?.id === offerId ? { ...old, imageUrl } : old);
+            setMessage('Banner uploaded. Save Offer to publish it.');
+          } catch (error) {
+            console.error('Homepage offer image upload failed', { offerId });
+            setMessage(error instanceof Error ? error.message : 'Could not upload banner image.');
+          } finally { setBusy(false); }
+        }} />
+      </label>
+      <p className="text-xs text-stone-500">Upload a JPG, PNG, WebP or GIF under 5 MB, or enter a direct public image URL. Sharing webpage links cannot be used as images.</p>
+      {draft.imageUrl && <div className="relative h-40 overflow-hidden rounded-xl bg-[#2A1810]" aria-label="Banner image preview"><OfferBannerImage key={draft.imageUrl} imageUrl={draft.imageUrl} offerId={draft.id} /></div>}
       <div className="grid gap-3 sm:grid-cols-2">{field('title', 'Title *')}{field('subtitle', 'Subtitle')}{field('badge', 'Badge text')}{field('description', 'Description')}{field('imageUrl', 'Banner image URL *', 'url')}{field('ctaText', 'CTA text')}{field('discountText', 'Discount text')}{field('displayOrder', 'Display order', 'number')}{field('startDate', 'Start date', 'date')}{field('endDate', 'End date', 'date')}</div>
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="text-xs font-bold">Destination type<select value={draft.destinationType} onChange={(event) => setDraft({ ...draft, destinationType: event.target.value as OfferSlide['destinationType'], destinationValue: '' })} className="mt-1 w-full rounded-xl border px-3 py-2 text-sm font-normal">
@@ -62,6 +94,7 @@ export const AdminOffersManager: React.FC = () => {
       </div>
       <label className="flex items-center gap-2 text-xs font-bold"><input type="checkbox" checked={draft.active} onChange={(event) => setDraft({ ...draft, active: event.target.checked })} /> Active</label>
       <div className="flex gap-2"><button type="submit" disabled={busy} className="rounded-full bg-[#965215] px-5 py-2 text-xs font-bold text-white">Save Offer</button><button type="button" onClick={() => setDraft(null)} className="rounded-full border px-5 py-2 text-xs">Cancel</button></div>
+      </fieldset>
     </form>}
   </section>;
 };
