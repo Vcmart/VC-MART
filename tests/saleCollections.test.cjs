@@ -1,0 +1,34 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const Module = require('node:module');
+const ts = require('typescript');
+function load(file) {
+  const filename = path.resolve(__dirname, '..', file);
+  const loaded = new Module(filename, module);
+  loaded.filename = filename;
+  loaded.paths = Module._nodeModulePaths(path.dirname(filename));
+  loaded._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText, filename);
+  return loaded.exports;
+}
+const {salePath, saleProductIds, selectSaleProducts} = load('src/utils/saleCollections.ts');
+const {getVisibleOfferSlides} = load('src/utils/offerSlides.ts');
+const {getProductPrice, calculateCartTotals} = load('src/utils/pricing.ts');
+const active = {id:'selected',status:'active',shopId:'vinayak-collection',price:999,salePrice:699};
+const unrelated = {id:'unrelated',status:'active',shopId:'vinayak-collection',price:1200};
+const inactive = {...active,id:'inactive',status:'inactive'};
+const deleted = {...active,id:'deleted',deletedAt:'2026-10-14'};
+const offer = {id:'stable-id',title:'Sale',destinationType:'sale',active:true,displayOrder:1,shopId:'',selectedProductIds:['selected','inactive','deleted','missing']};
+assert.deepEqual(selectSaleProducts(offer,[unrelated,active,inactive,deleted]),[active]);
+assert.strictEqual(selectSaleProducts(offer,[active])[0],active, 'Products must retain canonical pricing and identity');
+assert.deepEqual(selectSaleProducts({...offer,selectedProductIds:[]},[active,unrelated]),[]);
+assert.deepEqual(selectSaleProducts({...offer,selectedProductIds:undefined},[active]),[]);
+assert.deepEqual(selectSaleProducts({...offer,shopId:'khushi-communication'},[active]),[]);
+assert.deepEqual(saleProductIds({selectedProductIds:['selected','selected','','bad/id',null]}),['selected']);
+assert.equal(salePath(offer),'/sale/stable-id');
+assert.equal(salePath({...offer,title:'Renamed sale'}),'/sale/stable-id');
+assert.equal(getProductPrice(selectSaleProducts(offer,[active])[0],'retail'),699);
+assert.equal(calculateCartTotals([{product:active,quantity:2,shoppingMode:'retail'}],'retail').subtotal,1398);
+const now = new Date('2026-10-14T12:00:00').getTime();
+assert.deepEqual(getVisibleOfferSlides([{...offer,endDate:'2026-10-13'},{...offer,id:'future',startDate:'2026-10-15'},{...offer,id:'off',active:false}],now),[]);
+console.log('PASS: selected-only membership, empty/legacy selections, inactive/deleted/missing products, optional division filter, ID sanitization, stable sale URLs, original retail/cart prices and offer dates.');

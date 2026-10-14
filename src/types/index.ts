@@ -162,6 +162,7 @@ export interface Product {
 export type ShoppingMode = 'retail' | 'wholesale';
 
 export interface OfferSlide {
+  selectedProductIds?: string[];
   id: string;
   title: string;
   subtitle: string;
@@ -174,7 +175,7 @@ export interface OfferSlide {
   displayOrder: number;
   startDate: string;
   endDate: string;
-  destinationType: 'product' | 'category' | 'shop' | 'collection' | 'offer' | 'search';
+  destinationType: 'sale' | 'product' | 'category' | 'shop' | 'collection' | 'offer' | 'search';
   destinationValue: string;
   shopId: string;
 }

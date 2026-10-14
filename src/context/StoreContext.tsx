@@ -57,9 +57,10 @@ import {
   inferCategoryHierarchy,
 } from '../utils/clothingSizes';
 
-type StoreView = 'home' | 'shop' | 'cart' | 'checkout' | 'order-success' | 'track-order' | 'admin';
+type StoreView = 'home' | 'sale' | 'shop' | 'cart' | 'checkout' | 'order-success' | 'track-order' | 'admin';
 
 const viewFromPathname = (pathname: string): StoreView => {
+  if (pathname === '/sale' || pathname.startsWith('/sale/')) return 'sale';
   switch (pathname.replace(/\/+$/, '') || '/') {
     case '/shop': return 'shop';
     case '/checkout': return 'checkout';
@@ -71,6 +72,7 @@ const viewFromPathname = (pathname: string): StoreView => {
 
 const pathnameForView = (view: StoreView): string => {
   switch (view) {
+    case 'sale': return '/sale';
     case 'shop': return '/shop';
     case 'checkout':
     case 'order-success': return '/checkout';

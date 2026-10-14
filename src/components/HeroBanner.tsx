@@ -6,6 +6,7 @@ import { watchOfferSlides } from '../lib/firebaseRepository';
 import type { OfferSlide, ShopId } from '../types';
 import { getVisibleOfferSlides } from '../utils/offerSlides';
 import { OfferBannerImage } from './OfferBannerImage';
+import { salePath } from '../utils/saleCollections';
 
 const makeDefault = (id: string, title: string, subtitle: string, imageUrl: string, order: number): OfferSlide => ({
   id, title, subtitle, imageUrl, badge: 'EXPLORE VC MART', description: 'Discover quality products from our trusted Indian shops.',
@@ -45,6 +46,12 @@ export const HeroBanner: React.FC = () => {
     resume.current = setTimeout(() => setPaused(false), 8000);
   };
   const openOffer = (slide: OfferSlide) => {
+    if (slide.destinationType === 'sale') {
+      setCurrentView('sale');
+      window.history.replaceState({ view: 'sale' }, '', salePath(slide));
+      window.dispatchEvent(new Event('vcmart:navigate'));
+      return;
+    }
     const params = new URLSearchParams();
     const shops = ['vinayak-collection', 'kinshuk-spare-parts', 'khushi-communication'];
     if (shops.includes(slide.shopId)) params.set('shop', slide.shopId);

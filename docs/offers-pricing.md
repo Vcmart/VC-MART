@@ -15,6 +15,27 @@ percentage, or search text. Shop and category URLs use existing catalog
 filters. Collection URLs use existing product flags; a collection with no
 matching tagged products is empty.
 
+Sale collections use destination type `sale` and optional `selectedProductIds`
+on the same offer object in `settings/homepage.offerSlides`. The stable public
+URL is `/sale/<offer-id>`; renaming the offer does not change its URL. Admins
+choose real Firestore products in the Sale Products picker and can search by
+name, ID or SKU. Save Offer persists the selection using a transaction that
+preserves other offers. The optional shop/division filter restricts selected
+products further and never substitutes for membership. Missing, deleted and
+inactive products are omitted; an empty selection displays “Sale products will
+be available soon”. Inactive, scheduled or expired offers cannot be browsed.
+
+Sale membership does not override pricing. Product cards, details, cart and
+checkout use the existing product pricing pipeline and canonical product
+records. `discountText` is promotional text, not a price or discount rule;
+configure actual selling prices in product administration. There is no
+offer-specific price override in this release. Firestore rules remain unchanged:
+offers are public-readable and admin-editable, and products are read through
+the existing public `status == active` query before selecting sale members.
+
+Run `node tests/saleCollections.test.cjs` for membership, empty states,
+unavailable products, route stability, dates and original-price regression checks.
+
 Retail selling price comes from `salePrice` with legacy retail field
 fallbacks. `price` remains the original MRP and is never synthesized for a
 discount display. The card and detail view calculate the percentage from

@@ -8,6 +8,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { MessageCircle } from 'lucide-react';
 import { siteConfig } from './config/siteConfig';
 
+const SaleView = lazy(() => import('./views/SaleView').then(module => ({ default: module.SaleView })));
 const HomeView = lazy(() => import('./views/HomeView').then((module) => ({ default: module.HomeView })));
 const ShopView = lazy(() => import('./views/ShopView').then((module) => ({ default: module.ShopView })));
 const CheckoutView = lazy(() => import('./views/CheckoutView').then((module) => ({ default: module.CheckoutView })));
@@ -37,6 +38,7 @@ const MainContent: React.FC = () => {
         <ErrorBoundary fallbackTitle="View Error">
           <Suspense fallback={<div className="mx-auto max-w-7xl px-4 py-16 text-center text-sm text-stone-600">Loading VC MART…</div>}>
           {currentView === 'home' && <HomeView />}
+          {currentView === 'sale' && <SaleView />}
           {currentView === 'shop' && <ShopView />}
           {currentView === 'checkout' && <CheckoutView />}
           {currentView === 'track-order' && <TrackOrderView />}
